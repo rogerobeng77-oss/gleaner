@@ -84,6 +84,20 @@ After that: real geocoding and road routing in place of straight-line estimates,
 
 The honest gap in the current routing is that the ETA only covers pickup to pantry. It doesn't count the driver getting to the pickup. The margin it reports is therefore optimistic, and that's written into the docstring rather than hidden.
 
+## Testing instructions
+
+No login, no credentials, nothing to install. Open the live console and click **Log an offer**.
+
+**1. Watch it place one on its own.** The form is prefilled with 120 kg of chilled pork sausages. Submit it. The agent takes 10 to 30 seconds, because it is a real Bedrock call and not a canned response. It routes the pork away from Hazelwood, the one pantry in the network that does not accept pork, and places it at Squirrel Hill instead. The home screen updates: one placement, 220 meals.
+
+**2. Now watch it stop.** Log another offer, same food, but change the weight to 400 kg. This time it refuses to act alone and lands in **Decisions**, naming both rules that fired: over the 150 kg limit for the current autonomy level, and it would fill 96% of the pantry's cold store. Approve or decline it, and the paused run resumes from where it stopped.
+
+**Worth a look while you are there:** **Autonomy** shows the three levels and the two rules that cannot be loosened at any of them. **Timeline** shows every model call and tool call the agent made. **Ledger** records only what actually happened, so a held placement leaves no entry.
+
+To run it locally instead, see Quick start in the README. The test suite needs no AWS credentials: `pytest -m "not integration"`.
+
+---
+
 ## Built with
 
 python · fastapi · strands-agents · amazon-bedrock · claude · aws-app-runner · amazon-ecr · react · vite · zustand · pydantic · pytest · docker
