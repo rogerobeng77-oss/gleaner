@@ -26,12 +26,20 @@ being a guard. So the provider is tool-aware: it describes each tool in terms of
 dimensions that are genuinely real for it, leaves the rest silent, and returns
 ``None`` for a tool it cannot describe at all rather than inventing a description.
 
-**Fail closed.** Any input this module cannot make sense of - an unknown pantry, a
-naive datetime, a missing temperature class, a non-positive weight, an unresolvable
-offer, an unrecognised tool - escalates. Silence is never read as consent, and
-"silent rule" never means "safe action": the dimensions a tool leaves neutral are
-the ones that are *not about* that tool, never the ones that are risky but
-unchecked.
+**Fail closed.** Any input this module cannot make sense of escalates. For a
+placement that is an unknown pantry, a naive datetime, a missing temperature class
+or a non-positive weight; for a dispatch it is an offer id the world cannot resolve;
+for a tool this module has never been taught to describe it is the tool itself.
+Silence is never read as consent, and a silent rule never means a safe action: the
+dimensions a tool leaves neutral are the ones that are *not about* that tool, never
+ones that are risky but unchecked.
+
+A note on what an unresolvable offer does and does not do. On a **placement** it is
+not by itself a reason to stop - the placement's own arguments still describe the
+food, and the record's only job there is to overrule them where it disagrees; what
+it costs the agent is the donor lookup, and an unlookupable donor is novel. On a
+**dispatch** it is fatal, because the offer record is the only thing a dispatch call
+describes at all.
 """
 
 from __future__ import annotations

@@ -155,7 +155,9 @@ def test_an_eta_past_the_deadline_yields_a_negative_margin():
 
 def test_a_donor_that_cannot_be_resolved_is_treated_as_novel():
     world = _world()
-    ctx = build_context_provider(world)("commit_placement", _input(world, offer_id="off-never-seen"))
+    ctx = build_context_provider(world)(
+        "commit_placement", _input(world, offer_id="off-never-seen")
+    )
     assert ctx.donor_is_novel is True
 
 
@@ -251,7 +253,9 @@ def test_an_unparseable_eta_escalates():
 
 def test_a_naive_eta_escalates_rather_than_guessing_a_timezone():
     world = _world()
-    ctx = build_context_provider(world)("commit_placement", _input(world, eta="2026-09-01T12:20:00"))
+    ctx = build_context_provider(world)(
+        "commit_placement", _input(world, eta="2026-09-01T12:20:00")
+    )
     assert _escalates(ctx)
 
 

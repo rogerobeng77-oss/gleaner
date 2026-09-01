@@ -59,7 +59,15 @@ def _print_result(result: PlaceRunResult, ledger: list[dict], trail: AuditTrail)
         for hit in result.rule_hits:
             print(f"    - {hit['rule']}: {hit['detail']}")
         print(f"  interrupt {result.interrupt_id}, snapshot captured for resume")
-        print("  nothing was committed; a coordinator would answer this in the inbox")
+        # Not "nothing was committed": a run can clear the guard on commit_placement
+        # and stop on the dispatch that follows it, and the ledger printed below
+        # would then flatly contradict the claim.
+        committed = [e for e in ledger if e["kind"] == "commit_placement"]
+        if committed:
+            print(f"  {len(committed)} placement(s) already committed before it stopped")
+        else:
+            print("  nothing was committed yet")
+        print("  a coordinator would answer this in the inbox")
     else:
         print("COMPLETED - the agent acted within its autonomy limits")
         print(_RULE)
