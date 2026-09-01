@@ -1,10 +1,15 @@
 # tests/adapters/test_simulated.py
 from datetime import datetime, timezone
 
+from gleaner.adapters.base import WorldAdapter
 from gleaner.adapters.simulated import SimulatedCity
 from gleaner.domain.models import DonationOffer, Driver, Pantry
 
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+
+
+def test_simulated_city_satisfies_world_adapter():
+    assert isinstance(SimulatedCity(), WorldAdapter)
 
 
 def test_same_seed_produces_an_identical_world():

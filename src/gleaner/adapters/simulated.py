@@ -54,7 +54,7 @@ _CITY_AVERAGE_SPEED_KMH = 28.0
 class SimulatedCity:
     """A seeded, fully deterministic city."""
 
-    def __init__(self, seed: int = 412, now: datetime | None = None) -> None:
+    def __init__(self, seed: int = 413, now: datetime | None = None) -> None:
         self.seed = seed
         self._now = now or datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
         rng = random.Random(seed)
@@ -80,7 +80,13 @@ class SimulatedCity:
                     cold_used_kg=round(cold * rng.uniform(0.1, 0.7), 1),
                     opens_at_hour=rng.choice([8, 9, 10]),
                     closes_at_hour=rng.choice([16, 17, 18, 19]),
-                    dietary_restrictions=rng.choice([[], [], ["pork"], ["pork", "alcohol"]]),
+                    # Skewed so only a small minority of pantries carry a
+                    # dietary restriction, matching a general food-pantry network
+                    # where heavy restriction is characteristic of a handful of
+                    # dedicated cultural or religious partners, not the norm.
+                    dietary_restrictions=rng.choice(
+                        [[], [], [], [], [], [], ["pork"], ["pork", "alcohol"]]
+                    ),
                     recent_fresh_kg_30d=round(rng.uniform(20.0, 400.0), 1),
                 )
             )
@@ -123,15 +129,19 @@ class SimulatedCity:
         return donors
 
     # -- WorldAdapter ------------------------------------------------------
+    # The world is a fixed fixture: a judge must see exactly what the seed
+    # produced. Each accessor returns deep copies so a caller can mutate the
+    # objects it gets back (e.g. `cold_used_kg`) without perturbing this
+    # adapter's internal state or leaking that mutation into later calls.
 
     def pantries(self) -> list[Pantry]:
-        return list(self._pantries)
+        return [p.model_copy(deep=True) for p in self._pantries]
 
     def drivers(self) -> list[Driver]:
-        return list(self._drivers)
+        return [d.model_copy(deep=True) for d in self._drivers]
 
     def donors(self) -> list[Donor]:
-        return list(self._donors)
+        return [d.model_copy(deep=True) for d in self._donors]
 
     def now(self) -> datetime:
         return self._now
