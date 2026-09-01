@@ -8,7 +8,8 @@ the provider is pure arithmetic over the adapter.
 from datetime import datetime, timedelta, timezone
 
 from gleaner.adapters.simulated import SimulatedCity
-from gleaner.domain.types import AutonomyLevel
+from gleaner.domain.models import DonationOffer, FoodLot
+from gleaner.domain.types import AutonomyLevel, TempClass
 from gleaner.loops.place.context import build_context_provider
 from gleaner.policy.rules import evaluate_rules
 
@@ -361,6 +362,97 @@ def test_omitting_a_dietary_flag_does_not_buy_permission():
     )
     assert ctx.dietary_ok is False
     assert "dietary_conflict" in {h.rule for h in evaluate_rules(ctx, AutonomyLevel.TRUSTED)}
+
+
+# --- an offer that arrived from outside is defended exactly like a generated one ---
+#
+# The regression guard for the whole offer-record defence. Before ``register_offer``
+# existed, an offer submitted through POST /api/offers was never in the world's
+# registry, ``world.offer(...)`` returned None for it, and every fact the record was
+# supposed to contribute - the dietary flags, the cold-chain figure, the ready time -
+# quietly reverted to being whatever the agent said. At ``trusted`` that let pork into
+# a pork-restricted pantry unattended.
+
+
+def _pork_offer(offer_id: str = "off-submitted") -> DonationOffer:
+    """The offer shape POST /api/offers parses off the wire, not one this city made."""
+    return DonationOffer(
+        offer_id=offer_id,
+        donor_id="don-1",
+        lots=[
+            FoodLot(
+                description="pork sausages",
+                weight_kg=12.0,
+                temp_class=TempClass.CHILLED,
+                dietary_flags=["pork"],
+            )
+        ],
+        ready_at=NOW,
+        pickup_address="Somewhere, Pittsburgh, PA",
+        lat=40.44,
+        lon=-79.99,
+    )
+
+
+def test_a_registered_offer_still_catches_an_omitted_dietary_flag():
+    """The one that matters. Register, then let the agent simply not mention the pork."""
+    world = _world()
+    world.register_offer(_pork_offer())
+    ctx = build_context_provider(world)(
+        _input(
+            world,
+            offer_id="off-submitted",
+            pantry_id=_pantry_with_restriction(world, "pork"),
+            dietary_flags=[],                       # the agent says nothing about pork
+        )
+    )
+    assert ctx.dietary_ok is False
+    assert "dietary_conflict" in {h.rule for h in evaluate_rules(ctx, AutonomyLevel.TRUSTED)}
+
+
+def test_a_registered_offer_stops_the_commit_at_every_level_including_trusted():
+    """The same call through the real policy, not just the context. Trusted included."""
+    world = _world()
+    world.register_offer(_pork_offer())
+    for level in AutonomyLevel.order():
+        assert _stopped(
+            world,
+            level,
+            offer_id="off-submitted",
+            pantry_id=_pantry_with_restriction(world, "pork"),
+            dietary_flags=[],
+        ), f"{level} let unmentioned pork into a pork-restricted pantry"
+
+
+def test_without_registration_the_same_call_is_undefended():
+    """Names the failure precisely, so a future regression reads as this test flipping.
+
+    Not an endorsement of the unregistered path - a proof that registration is what
+    does the work, and therefore that dropping the ``register_offer`` call in
+    ``POST /api/offers`` would be a real loss and not a no-op.
+    """
+    world = _world()                                # deliberately NOT registered
+    ctx = build_context_provider(world)(
+        _input(
+            world,
+            offer_id="off-submitted",
+            pantry_id=_pantry_with_restriction(world, "pork"),
+            dietary_flags=[],
+        )
+    )
+    assert ctx.dietary_ok is True                   # nothing knows about the pork
+
+
+def test_a_registered_offer_overrides_an_understated_cold_chain():
+    """Registration carries the whole record across, not only the dietary flags."""
+    world = _world()
+    stale = _pork_offer("off-stale")
+    world.register_offer(stale.model_copy(update={"minutes_out_of_refrigeration": 300.0}))
+    ctx = build_context_provider(world)(
+        _input(world, offer_id="off-stale", minutes_out_of_refrigeration=0.0)
+    )
+    assert ctx.liability_ok is False                # 300 minutes against a 240 budget
+    assert ctx.safety_confidence == 0.0
 
 
 def test_every_one_of_the_four_is_stopped_at_the_strictest_level_too():

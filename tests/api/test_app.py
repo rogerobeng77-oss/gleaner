@@ -194,6 +194,44 @@ def test_impact_counts_only_the_weight_committed_for_this_offer():
     assert client.get("/api/impact").json()["kg_rescued"] == 40.0
 
 
+# --- the submitted offer must enter the world, or the guard has nothing to check ---
+
+
+def test_a_submitted_offer_is_resolvable_in_the_world_afterwards():
+    """POST /api/offers must register the offer, not merely parse it.
+
+    The escalation policy reads the offer record to check the agent's account of the
+    food against the donor's. An offer that never reached the registry resolves to
+    None and that whole defence is skipped.
+    """
+    client, state = _stub_client(PlaceRunResult(False, None, None, None, "done"))
+    assert state.world.offer("off-1") is None
+    client.post("/api/offers", json=OFFER)
+    registered = state.world.offer("off-1")
+    assert registered is not None
+    assert registered.offer_id == "off-1"
+    assert registered.lots[0].weight_kg == 40.0
+
+
+def test_registration_happens_before_the_loop_runs_not_after():
+    """Ordering is the whole point: a guard consulted mid-run needs it already there."""
+    seen: list[bool] = []
+
+    async def runner(state, offer):
+        seen.append(state.world.offer(offer.offer_id) is not None)
+        return PlaceRunResult(False, None, None, None, "done")
+
+    app = create_app(offer_runner=runner)
+    TestClient(app).post("/api/offers", json=OFFER)
+    assert seen == [True]
+
+
+def test_a_rejected_offer_never_reaches_the_registry():
+    client, state = _stub_client(PlaceRunResult(False, None, None, None, ""))
+    client.post("/api/offers", json={**OFFER, "lots": []})
+    assert state.world.offer("off-1") is None
+
+
 def test_a_malformed_offer_is_rejected_before_any_agent_runs():
     client, state = _stub_client(PlaceRunResult(False, None, None, None, ""))
     response = client.post("/api/offers", json={**OFFER, "lots": []})

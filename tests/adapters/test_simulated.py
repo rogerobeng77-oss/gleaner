@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 
 from gleaner.adapters.base import WorldAdapter
 from gleaner.adapters.simulated import SimulatedCity
-from gleaner.domain.models import DonationOffer, Driver, Pantry
+from gleaner.domain.models import DonationOffer, Driver, FoodLot, Pantry
+from gleaner.domain.types import TempClass
 
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -74,3 +75,48 @@ def test_clock_is_fixed_and_aware():
     city = SimulatedCity(now=NOW)
     assert city.now() == NOW
     assert city.now().tzinfo is not None
+
+
+def _offer(offer_id: str = "off-outside") -> DonationOffer:
+    return DonationOffer(
+        offer_id=offer_id,
+        donor_id="don-1",
+        lots=[FoodLot(description="pork sausages", weight_kg=12.0,
+                      temp_class=TempClass.CHILLED, dietary_flags=["pork"])],
+        ready_at=NOW,
+        pickup_address="Somewhere, Pittsburgh, PA",
+        lat=40.44,
+        lon=-79.99,
+    )
+
+
+def test_a_generated_offer_is_resolvable_by_id():
+    city = SimulatedCity(now=NOW)
+    generated = city.generate_offer(rng_seed=3)
+    assert city.offer(generated.offer_id) == generated
+
+
+def test_a_registered_offer_is_resolvable_exactly_like_a_generated_one():
+    """Both paths must land in the same registry or the guard defends only one."""
+    city = SimulatedCity(now=NOW)
+    assert city.offer("off-outside") is None
+    city.register_offer(_offer())
+    resolved = city.offer("off-outside")
+    assert resolved is not None
+    assert resolved.lots[0].dietary_flags == ["pork"]
+
+
+def test_registering_stores_a_copy_the_caller_cannot_edit_afterwards():
+    """The record the guard consults must not be rewritable by whoever submitted it."""
+    city = SimulatedCity(now=NOW)
+    submitted = _offer()
+    city.register_offer(submitted)
+    submitted.lots[0].dietary_flags.clear()
+    assert city.offer("off-outside").lots[0].dietary_flags == ["pork"]
+
+
+def test_an_unresolvable_offer_id_is_none_rather_than_a_guess():
+    city = SimulatedCity(now=NOW)
+    assert city.offer("off-never-seen") is None
+    assert city.offer(None) is None
+    assert city.offer(42) is None

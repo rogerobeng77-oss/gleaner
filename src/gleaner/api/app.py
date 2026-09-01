@@ -120,6 +120,12 @@ def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
         on.
         """
         current = state()
+        # Register before running, not after. The escalation policy resolves the
+        # offer record to check the agent's account of the food against the donor's
+        # own - the pork it did not mention, the two hours out of the fridge it
+        # rounded down. An unregistered offer resolves to None, that whole branch
+        # never runs, and the guard silently falls back to trusting the model.
+        current.world.register_offer(offer)
         current.trail.record("offer", f"offer {offer.offer_id} received", {
             "offer_id": offer.offer_id,
             "total_weight_kg": offer.total_weight_kg,

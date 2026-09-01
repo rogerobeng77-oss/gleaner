@@ -145,17 +145,31 @@ class SimulatedCity:
         return [d.model_copy(deep=True) for d in self._donors]
 
     def offer(self, offer_id: str | None) -> DonationOffer | None:
-        """An offer this city has generated, by id, or ``None``.
+        """An offer this city knows about, by id, or ``None``.
 
         Exists so the escalation policy can resolve a guarded ``commit_placement``
-        call back to the donor behind it and read that donor's real history, rather
-        than believing whatever the agent says about who is donating. A live world
-        adapter would answer this from its own records.
+        call back to the food and the donor behind it, rather than believing whatever
+        the agent says about either. A live world adapter would answer this from its
+        own records.
         """
         if not isinstance(offer_id, str):
             return None
         found = self._offers.get(offer_id)
         return found.model_copy(deep=True) if found is not None else None
+
+    def register_offer(self, offer: DonationOffer) -> None:
+        """Remember an offer that arrived from outside, so ``offer()`` resolves it.
+
+        ``generate_offer`` populates the same registry, and deliberately so: an offer
+        posted to ``POST /api/offers`` must be exactly as resolvable as one this city
+        invented, or the escalation policy's offer-record defence would hold on the
+        demo path and quietly evaporate on the API path - which is the path a judge
+        will actually drive.
+
+        Stored as a deep copy so a caller that keeps mutating its own offer object
+        after submitting it cannot retroactively edit the record the guard consults.
+        """
+        self._offers[offer.offer_id] = offer.model_copy(deep=True)
 
     def now(self) -> datetime:
         return self._now
@@ -206,5 +220,5 @@ class SimulatedCity:
             minutes_out_of_refrigeration=float(rng.choice([0, 0, 30, 90, 200])),
             notes=rng.choice(["", "back dock, ask for the duty manager", "must go today"]),
         )
-        self._offers[offer.offer_id] = offer
+        self.register_offer(offer)
         return offer

@@ -31,7 +31,7 @@ from typing import Any
 from gleaner.adapters.base import WorldAdapter
 from gleaner.domain import perishability
 from gleaner.domain.capacity import can_accept, utilisation_after
-from gleaner.domain.models import FoodLot, Pantry
+from gleaner.domain.models import DonationOffer, FoodLot, Pantry
 from gleaner.domain.types import TempClass
 from gleaner.policy.rules import PlacementContext
 
@@ -138,22 +138,18 @@ def build_context_provider(
     * ``has_viable_match`` is ``True`` only when the pantry exists and can physically
       take the whole lot right now.
     """
-    offer_lookup = getattr(world, "offer", None)
-
-    def _offer(tool_input: dict[str, Any]) -> Any | None:
+    def _offer(tool_input: dict[str, Any]) -> DonationOffer | None:
         """The donation offer behind this call, if the world can resolve it."""
-        if not callable(offer_lookup):
-            return None
-        return offer_lookup(tool_input.get("offer_id"))
+        return world.offer(tool_input.get("offer_id"))
 
     def _pantry(pantry_id: Any) -> Pantry | None:
         if not isinstance(pantry_id, str):
             return None
         return next((p for p in world.pantries() if p.pantry_id == pantry_id), None)
 
-    def _donor_is_novel(tool_input: dict[str, Any], offer: Any | None) -> bool:
+    def _donor_is_novel(tool_input: dict[str, Any], offer: DonationOffer | None) -> bool:
         """Novel unless the world can positively say otherwise."""
-        donor_id = tool_input.get("donor_id") or getattr(offer, "donor_id", None)
+        donor_id = offer.donor_id if offer is not None else tool_input.get("donor_id")
         if not isinstance(donor_id, str):
             return True
         donor = next((d for d in world.donors() if d.donor_id == donor_id), None)
@@ -199,7 +195,7 @@ def build_context_provider(
         # agent that forgets to mention the pork therefore does not get waved through.
         offer = _offer(tool_input)
         if offer is not None:
-            for offer_lot in getattr(offer, "lots", []):
+            for offer_lot in offer.lots:
                 flags.extend(f for f in offer_lot.dietary_flags if f not in flags)
             minutes_out = max(minutes_out, float(offer.minutes_out_of_refrigeration))
             ready_at = offer.ready_at
