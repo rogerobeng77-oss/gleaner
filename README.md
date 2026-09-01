@@ -184,24 +184,6 @@ Meals round down; a partial meal is not a meal.
 
 ---
 
-## Layout
-
-```
-src/gleaner/
-  domain/      perishability clock, models, capacity, scoring, impact — pure functions
-  policy/      rules.py (the thresholds), escalation.py (the Strands handler), dependency.py
-  loops/place/ tools, the context provider, the runner
-  adapters/    WorldAdapter protocol + a deterministic, seeded Pittsburgh
-  hooks/       the audit trail
-  persistence/ the decision inbox
-  api/         FastAPI control plane
-frontend/      React 18 + Vite console
-tests/evals/   the safety argument
-```
-
-Not yet built, and named as such rather than implied: the FORECAST and SOURCE loops, real
-geocoding and routing, and live email/Slack channels.
-
 ## Licence
 
 Apache-2.0.
