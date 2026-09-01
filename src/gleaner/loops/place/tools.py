@@ -29,6 +29,12 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
     def _pantry(pantry_id: str):
         return next((p for p in world.pantries() if p.pantry_id == pantry_id), None)
 
+    def _driver(driver_id: str):
+        return next((d for d in world.drivers() if d.driver_id == driver_id), None)
+
+    def _donor(donor_id: str):
+        return next((d for d in world.donors() if d.donor_id == donor_id), None)
+
     @tool
     def list_pantries() -> list[dict]:
         """List every pantry with its location, hours and free capacity."""
@@ -50,7 +56,10 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
 
     @tool
     def check_capacity(pantry_id: str, temp_class: str) -> dict:
-        """Check how many kilograms of a given temperature class a pantry can still take."""
+        """Check how many kilograms of a given temperature class a pantry can still take.
+
+        temp_class must be one of "chilled", "frozen", "ambient".
+        """
         pantry = _pantry(pantry_id)
         if pantry is None:
             return {"error": f"unknown pantry {pantry_id}"}
@@ -80,6 +89,11 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
         The deadline is the real perishability deadline, computed from the food's
         temperature class and how long it has already been out of refrigeration - not a
         nominal window.
+
+        temp_class must be one of "chilled", "frozen", "ambient". weight_kg and
+        minutes_out_of_refrigeration are in kilograms and minutes respectively.
+        ready_at_iso, if given, must be an ISO-8601 string WITH a timezone offset (a
+        naive value raises ValueError from safe_until); omit it to mean "available now".
         """
         lot = FoodLot(
             description=description,
@@ -157,6 +171,10 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
         offer_id: str, pantry_id: str, driver_id: str, weight_kg: float, eta: str
     ) -> dict:
         """Irreversibly commit this donation to a pantry. Consequential: guarded by policy."""
+        if _pantry(pantry_id) is None:
+            return {"error": f"unknown pantry {pantry_id}"}
+        if _driver(driver_id) is None:
+            return {"error": f"unknown driver {driver_id}"}
         entry = {
             "kind": "commit_placement",
             "offer_id": offer_id,
@@ -172,6 +190,8 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
     @tool
     def dispatch_driver(driver_id: str, offer_id: str, pickup_address: str) -> dict:
         """Dispatch a driver to collect. Consequential: guarded by policy."""
+        if _driver(driver_id) is None:
+            return {"error": f"unknown driver {driver_id}"}
         entry = {
             "kind": "dispatch_driver",
             "driver_id": driver_id,
@@ -185,6 +205,8 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
     @tool
     def notify_pantry(pantry_id: str, message: str) -> dict:
         """Send a message to a pantry. Consequential: guarded by policy."""
+        if _pantry(pantry_id) is None:
+            return {"error": f"unknown pantry {pantry_id}"}
         entry = {"kind": "notify_pantry", "pantry_id": pantry_id, "message": message,
                  "at": world.now().isoformat()}
         ledger.append(entry)
@@ -193,6 +215,8 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
     @tool
     def notify_donor(donor_id: str, message: str) -> dict:
         """Send a message to a donor. Consequential: guarded by policy."""
+        if _donor(donor_id) is None:
+            return {"error": f"unknown donor {donor_id}"}
         entry = {"kind": "notify_donor", "donor_id": donor_id, "message": message,
                  "at": world.now().isoformat()}
         ledger.append(entry)

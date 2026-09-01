@@ -54,11 +54,10 @@ def test_find_pantries_returns_ranked_viable_candidates_with_reasons():
         description="salad", weight_kg=20.0, temp_class="chilled",
         origin_lat=40.44, origin_lon=-79.99, dietary_flags=[],
     )
-    assert isinstance(result, list)
-    if result:
-        assert "reasons" in result[0] and "score" in result[0]
-        scores = [r["score"] for r in result]
-        assert scores == sorted(scores, reverse=True)
+    assert result
+    assert "reasons" in result[0] and "score" in result[0]
+    scores = [r["score"] for r in result]
+    assert scores == sorted(scores, reverse=True)
 
 
 def test_find_pantries_returns_nothing_once_the_budget_is_spent():
@@ -102,3 +101,46 @@ def test_notifications_are_recorded_not_silently_dropped():
     tools, ledger, _ = _tools()
     tools["notify_pantry"](pantry_id="pan-1", message="incoming")
     assert any(e["kind"] == "notify_pantry" for e in ledger)
+
+
+def test_commit_placement_rejects_an_unknown_pantry_and_leaves_the_ledger_untouched():
+    tools, ledger, _ = _tools()
+    result = tools["commit_placement"](
+        offer_id="off-1", pantry_id="pan-99", driver_id="drv-1",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00",
+    )
+    assert "error" in result
+    assert ledger == []
+
+
+def test_commit_placement_rejects_an_unknown_driver_and_leaves_the_ledger_untouched():
+    tools, ledger, _ = _tools()
+    result = tools["commit_placement"](
+        offer_id="off-1", pantry_id="pan-1", driver_id="drv-99",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00",
+    )
+    assert "error" in result
+    assert ledger == []
+
+
+def test_dispatch_driver_rejects_an_unknown_driver_and_leaves_the_ledger_untouched():
+    tools, ledger, _ = _tools()
+    result = tools["dispatch_driver"](
+        driver_id="drv-99", offer_id="off-1", pickup_address="123 Main St",
+    )
+    assert "error" in result
+    assert ledger == []
+
+
+def test_notify_pantry_rejects_an_unknown_pantry_and_leaves_the_ledger_untouched():
+    tools, ledger, _ = _tools()
+    result = tools["notify_pantry"](pantry_id="pan-99", message="incoming")
+    assert "error" in result
+    assert ledger == []
+
+
+def test_notify_donor_rejects_an_unknown_donor_and_leaves_the_ledger_untouched():
+    tools, ledger, _ = _tools()
+    result = tools["notify_donor"](donor_id="don-99", message="incoming")
+    assert "error" in result
+    assert ledger == []
