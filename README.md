@@ -186,4 +186,4 @@ Meals round down; a partial meal is not a meal.
 
 ## Licence
 
-Apache-2.0.
+MIT — free to use, modify and distribute.
