@@ -115,9 +115,15 @@ def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
         * the agent finishes without committing anything, which the ledger shows by
           staying empty.
 
-        Impact is only counted when the run completed. A paused run has moved no food
-        yet, and counting it would inflate the one number the whole project is judged
-        on.
+        **Impact follows the ledger, not the run's exit status.** The instinct to
+        count only completed runs is right in spirit and wrong in mechanism: a run
+        can commit a placement and *then* pause on a later guarded call, and the
+        ledger already holds that commit. Keying impact off ``paused`` therefore made
+        GET /api/ledger show food committed while GET /api/impact showed zero
+        placements - two endpoints describing the same run and disagreeing. Counting
+        what the ledger records as committed for this offer keeps them in step and
+        still cannot inflate the headline number: a run that committed nothing has
+        nothing in the ledger, so it counts nothing, paused or not.
         """
         current = state()
         # Register before running, not after. The escalation policy resolves the
@@ -131,6 +137,25 @@ def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
             "total_weight_kg": offer.total_weight_kg,
         })
         result = await run_this_offer(current, offer)
+
+        # Read the ledger before branching. A paused run may still have committed.
+        committed_kg = sum(
+            float(e.get("weight_kg", 0.0))
+            for e in current.ledger
+            if e.get("kind") == "commit_placement" and e.get("offer_id") == offer.offer_id
+        )
+        if committed_kg > 0:
+            current.impact.append(
+                ImpactEntry(
+                    offer_id=offer.offer_id,
+                    kg=committed_kg,
+                    meals=meals_from_kg(committed_kg),
+                    co2e_kg=co2e_avoided_kg(committed_kg),
+                    # Without a coordinator on this offer, this is what would have
+                    # gone to landfill. The whole donation, not just the placed part.
+                    counterfactual_kg_wasted=offer.total_weight_kg,
+                )
+            )
 
         if result.paused:
             decision = Decision(
@@ -154,25 +179,11 @@ def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
                 "decision_id": decision.decision_id,
                 "rule": decision.rule,
                 "rule_hits": result.rule_hits,
+                # What the run had already committed before it stopped. Zero on a
+                # run that paused on its first guarded call, which is the usual case.
+                "committed_kg": committed_kg,
             }
 
-        committed_kg = sum(
-            float(e.get("weight_kg", 0.0))
-            for e in current.ledger
-            if e.get("kind") == "commit_placement" and e.get("offer_id") == offer.offer_id
-        )
-        if committed_kg > 0:
-            current.impact.append(
-                ImpactEntry(
-                    offer_id=offer.offer_id,
-                    kg=committed_kg,
-                    meals=meals_from_kg(committed_kg),
-                    co2e_kg=co2e_avoided_kg(committed_kg),
-                    # Without a coordinator on this offer, this is what would have
-                    # gone to landfill. The whole donation, not just the placed part.
-                    counterfactual_kg_wasted=offer.total_weight_kg,
-                )
-            )
         current.trail.record("offer", f"offer {offer.offer_id} finished", {
             "committed_kg": committed_kg,
         })

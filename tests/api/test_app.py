@@ -177,6 +177,46 @@ def test_an_escalated_offer_counts_no_impact():
     assert client.get("/api/impact").json()["placements"] == 0
 
 
+def test_a_run_that_committed_and_then_paused_counts_what_it_committed():
+    """The ledger and the impact figures must not describe the same run differently.
+
+    A run can clear the guard on commit_placement and pause on a later guarded call.
+    Keying impact off ``paused`` showed food in GET /api/ledger and zero placements
+    in GET /api/impact for that run.
+    """
+    client, _ = _stub_client(
+        PlaceRunResult(True, "int-2", "novel_donor", {"scope": "agent"}, "needs a human"),
+        commits=[_commit(weight_kg=40.0)],
+    )
+    body = client.post("/api/offers", json=OFFER).json()
+    assert body["status"] == "awaiting_decision"       # still parked for a human
+    assert body["committed_kg"] == 40.0
+
+    ledger = client.get("/api/ledger").json()
+    impact = client.get("/api/impact").json()
+    assert [e["weight_kg"] for e in ledger] == [40.0]
+    assert impact["placements"] == 1
+    assert impact["kg_rescued"] == 40.0
+
+
+def test_a_paused_run_that_committed_nothing_still_counts_nothing():
+    """The half the old rule got right, kept: no commit in the ledger, no impact."""
+    client, _ = _stub_client(PlaceRunResult(True, "int-3", "tight_window", {}, "?"))
+    body = client.post("/api/offers", json=OFFER).json()
+    assert body["committed_kg"] == 0.0
+    assert client.get("/api/ledger").json() == []
+    assert client.get("/api/impact").json()["placements"] == 0
+
+
+def test_a_paused_run_counts_only_this_offer_s_commits():
+    client, _ = _stub_client(
+        PlaceRunResult(True, "int-4", "novel_donor", {}, "?"),
+        commits=[_commit(weight_kg=40.0), _commit(offer_id="off-other", weight_kg=999.0)],
+    )
+    client.post("/api/offers", json=OFFER)
+    assert client.get("/api/impact").json()["kg_rescued"] == 40.0
+
+
 def test_an_offer_the_agent_declined_to_place_is_recorded_as_such():
     client, _ = _stub_client(PlaceRunResult(False, None, None, None, "found nowhere"))
     body = client.post("/api/offers", json=OFFER).json()
