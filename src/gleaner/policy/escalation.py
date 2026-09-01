@@ -27,15 +27,28 @@ GUARDED_TOOLS: frozenset[str] = frozenset(
 def decision_is_approval(response: Any) -> bool:
     """Approval predicate for ``Confirm``.
 
-    Strands' default accepts ``True`` and the strings "y"/"yes". We deliberately
-    accept neither: an approval must be a structured record naming who decided and
-    why, because that record is also the audit entry.
+    Strands' default accepts ``True`` and the strings "y"/"yes". We accept neither:
+    an approval has to be a structured object that says ``approve`` in a named field,
+    so that a stray truthy value coming back through the interrupt channel cannot be
+    mistaken for a human's consent.
+
+    It checks nothing beyond that. Who approved, in what role, and why is captured by
+    ``DecisionInbox.answer``, which builds the audit record via ``Decision.answer``
+    and requires ``by`` and ``role`` there. Attribution is enforced on the path that
+    actually writes the audit trail; this predicate only decides whether the agent
+    may continue.
     """
     return isinstance(response, dict) and response.get("decision") == "approve"
 
 
 class EscalationPolicy(InterventionHandler):
     """Decides, per consequential tool call, whether the agent may act alone.
+
+    **Build one instance per run.** ``last_hits`` is per-instance mutable state that
+    callers read *after* the run returns, to name the rule that paused it. Two offers
+    sharing a policy would overwrite each other's hits and the inbox would attribute
+    one offer's escalation reason to the other. ``build_default_policy`` in the PLACE
+    runner is the intended constructor.
 
     ``before_tool_call`` must be defined at class level - Strands inspects the class
     to discover which lifecycle methods a handler implements, so assigning the method
