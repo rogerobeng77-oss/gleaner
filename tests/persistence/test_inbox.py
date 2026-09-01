@@ -66,3 +66,43 @@ def test_pending_is_ordered_oldest_first():
     inbox.open(_decision("a"), interrupt_id="i", snapshot={}, rule_hits=[])
     inbox.open(_decision("b"), interrupt_id="i", snapshot={}, rule_hits=[])
     assert [p.decision.decision_id for p in inbox.pending()] == ["a", "b"]
+
+
+def test_mutating_callers_snapshot_after_open_does_not_corrupt_the_parked_state():
+    inbox = DecisionInbox()
+    snapshot = {"messages": ["hi"]}
+    inbox.open(_decision(), interrupt_id="i", snapshot=snapshot, rule_hits=[])
+    snapshot["new_key"] = "should not appear"
+    del snapshot["messages"]
+    # open() takes a shallow copy: top-level additions/removals on the caller's dict
+    # after open() must not reach the parked state.
+    assert inbox.get("dec-1").snapshot == {"messages": ["hi"]}
+
+
+def test_mutating_callers_rule_hits_after_open_does_not_corrupt_the_parked_state():
+    inbox = DecisionInbox()
+    hits = [{"rule": "tight_window", "detail": "only 5 minutes of slack"}]
+    inbox.open(_decision(), interrupt_id="i", snapshot={}, rule_hits=hits)
+    hits.append({"rule": "extra", "detail": "appended after open"})
+    assert inbox.get("dec-1").rule_hits == [{"rule": "tight_window", "detail": "only 5 minutes of slack"}]
+
+
+def test_reopening_a_still_pending_id_raises_instead_of_clobbering():
+    inbox = DecisionInbox()
+    inbox.open(_decision(), interrupt_id="int-1", snapshot={"a": 1}, rule_hits=[])
+    with pytest.raises(KeyError):
+        inbox.open(_decision(), interrupt_id="int-2", snapshot={"a": 2}, rule_hits=[])
+    # the original parked state survives the failed re-open attempt
+    assert inbox.get("dec-1").interrupt_id == "int-1"
+    assert inbox.get("dec-1").snapshot == {"a": 1}
+
+
+def test_reopening_an_already_answered_id_is_permitted_as_a_fresh_escalation():
+    inbox = DecisionInbox()
+    inbox.open(_decision(), interrupt_id="int-1", snapshot={}, rule_hits=[])
+    inbox.answer("dec-1", DecisionOutcome.APPROVE, by="a", role="b", note="")
+    # dec-1 is no longer pending, so re-opening it is treated as a new escalation
+    # rather than an illegal overwrite; this is a deliberate choice, recorded here.
+    inbox.open(_decision(), interrupt_id="int-2", snapshot={}, rule_hits=[])
+    assert inbox.get("dec-1").interrupt_id == "int-2"
+    assert [p.decision.decision_id for p in inbox.answered()] == ["dec-1"]

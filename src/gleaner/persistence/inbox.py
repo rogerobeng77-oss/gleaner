@@ -37,9 +37,27 @@ class DecisionInbox:
         snapshot: dict[str, Any],
         rule_hits: list[dict[str, str]],
     ) -> str:
-        """Park an escalation and return its id."""
+        """Park an escalation and return its id.
+
+        `snapshot` and `rule_hits` are shallow-copied on the way in so a caller that
+        mutates its own dict/list after calling `open()` cannot silently corrupt the
+        parked state. A shallow copy is enough here: this data comes from
+        `dataclasses.asdict` and its nested content is not shared with a live object,
+        so there is nothing deeper worth copying.
+
+        Raises `KeyError` if `decision_id` is already pending — re-opening a still-
+        pending id would silently discard its earlier snapshot and interrupt_id, which
+        is exactly the failure this inbox exists to prevent. Re-opening an id that has
+        already been answered is fine: it is no longer in `_pending`, so it is treated
+        as a fresh escalation.
+        """
+        if decision.decision_id in self._pending:
+            raise KeyError(f"decision {decision.decision_id!r} is already pending")
         self._pending[decision.decision_id] = PendingDecision(
-            decision=decision, interrupt_id=interrupt_id, snapshot=snapshot, rule_hits=rule_hits
+            decision=decision,
+            interrupt_id=interrupt_id,
+            snapshot=dict(snapshot),
+            rule_hits=list(rule_hits),
         )
         return decision.decision_id
 
