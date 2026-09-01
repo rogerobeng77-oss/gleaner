@@ -27,3 +27,4 @@ packages = ["src/gleaner"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["integration: hits Amazon Bedrock; requires AWS credentials"]
