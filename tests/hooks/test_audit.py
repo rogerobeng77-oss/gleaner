@@ -1,4 +1,5 @@
 from strands.hooks import (
+    AfterInvocationEvent,
     AfterToolCallEvent,
     BeforeInvocationEvent,
     BeforeToolCallEvent,
@@ -43,3 +44,13 @@ def test_subscribes_to_the_events_we_rely_on():
         BeforeToolCallEvent,
         AfterToolCallEvent,
     }
+
+
+def test_records_invocation_start_and_finish_in_order():
+    trail = AuditTrail()
+    trail.on_before_invocation(type("E", (), {})())
+    trail.on_after_invocation(type("E", (), {})())
+    assert [(e.kind, e.label) for e in trail.entries] == [
+        ("invocation", "agent started"),
+        ("invocation", "agent finished"),
+    ]
