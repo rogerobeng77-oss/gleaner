@@ -9,7 +9,9 @@ will not allow it to make alone. In the second case the run stops with
 
 ``resume_place`` loads that snapshot into an agent and feeds back the human's decision,
 picking the run up exactly where it stopped - potentially hours later, in a different
-process, on a different machine.
+process, on a different machine. Resuming can itself pause again: approving a
+``commit_placement`` can walk straight into a guarded ``dispatch_driver``, so reason
+population has to happen on every pause, not just the first.
 
 ``checkpointing`` stays False throughout: with it enabled the run halts with
 ``stop_reason == "checkpoint"`` before ever reaching the tool call, and no interrupt
@@ -73,15 +75,37 @@ def build_place_agent(
     )
 
 
-def _result_from(agent: Agent, raw: Any) -> PlaceRunResult:
+def _result_from(agent: Agent, raw: Any, policy: EscalationPolicy) -> PlaceRunResult:
+    """Build a ``PlaceRunResult`` from a raw agent result, naming the rule that paused it.
+
+    ``interrupt.name`` is always the intervention handler's own name
+    (``"gleaner-escalation"``), never the specific rule that fired - Strands has no
+    concept of a per-interrupt reason string beyond the ``Confirm`` prompt text, which
+    is meant for a human to read, not to pattern-match on. The actual rule name always
+    comes from ``policy.last_hits``, which ``EscalationPolicy.before_tool_call``
+    populates on the very call that raised this interrupt.
+
+    This function is the single place that does that lookup, and both ``run_place``
+    and ``resume_place`` route through it, so a pause that happens mid-resume (e.g.
+    approving ``commit_placement`` walks straight into a guarded ``dispatch_driver``)
+    gets a real reason too, not just the first pause of a run.
+
+    If ``policy.last_hits`` is empty while the run is paused - the policy instance
+    passed in was not the one that actually decided this interrupt, most likely -
+    there is no rule to report and ``interrupt_reason`` is deliberately left ``None``
+    rather than guessing. Callers (the decision inbox included) must treat ``None``
+    as "reason unknown", never as "no rule fired": the run would not be paused at all
+    if no rule had fired.
+    """
     interrupts = getattr(raw, "interrupts", None)
     if raw.stop_reason == "interrupt" and interrupts:
         interrupt = interrupts[0]
         snapshot = dataclasses.asdict(agent.take_snapshot(preset="session"))
+        reason = policy.last_hits[0].rule if policy.last_hits else None
         return PlaceRunResult(
             paused=True,
             interrupt_id=interrupt.id,
-            interrupt_reason=interrupt.name if interrupt.name != "gleaner-escalation" else None,
+            interrupt_reason=reason,
             snapshot=snapshot,
             text=str(raw),
         )
@@ -96,10 +120,7 @@ async def run_place(agent: Agent, prompt: str, policy: EscalationPolicy) -> Plac
     the handler's name, not the rule that fired.
     """
     raw = await agent.invoke_async(prompt)
-    result = _result_from(agent, raw)
-    if result.paused and policy.last_hits:
-        result.interrupt_reason = policy.last_hits[0].rule
-    return result
+    return _result_from(agent, raw, policy)
 
 
 async def resume_place(
@@ -107,10 +128,16 @@ async def resume_place(
     snapshot: dict[str, Any],
     interrupt_id: str,
     decision_record: dict[str, Any],
+    policy: EscalationPolicy,
 ) -> PlaceRunResult:
-    """Resume a paused run with a human's structured decision."""
+    """Resume a paused run with a human's structured decision.
+
+    Takes ``policy`` for the same reason ``run_place`` does: naming the reason for
+    *this* pause (if the resumed run pauses again on a later guarded call) requires
+    ``policy.last_hits``, which only the live policy instance carries.
+    """
     agent.load_snapshot(Snapshot(**snapshot))
     raw = await agent.invoke_async(
         [{"interruptResponse": {"interruptId": interrupt_id, "response": decision_record}}]
     )
-    return _result_from(agent, raw)
+    return _result_from(agent, raw, policy)

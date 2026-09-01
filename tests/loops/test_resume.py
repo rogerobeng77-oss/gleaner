@@ -55,6 +55,7 @@ async def test_approval_resumes_and_commits():
     resumed = await resume_place(
         agent, result.snapshot, result.interrupt_id,
         {"decision": "approve", "by": "Ama", "role": "coordinator", "note": "confirmed by phone"},
+        policy,
     )
     assert not resumed.paused
     assert any(e["kind"] == "commit_placement" for e in ledger)
@@ -66,6 +67,7 @@ async def test_rejection_resumes_without_committing():
     resumed = await resume_place(
         agent, result.snapshot, result.interrupt_id,
         {"decision": "reject", "by": "Ama", "role": "coordinator", "note": "freezer failed inspection"},
+        policy,
     )
     assert not resumed.paused
     assert not any(e["kind"] == "commit_placement" for e in ledger)
@@ -94,11 +96,12 @@ async def test_the_inbox_can_carry_a_pause_across_agent_instances():
     answered = inbox.answer("dec-1", DecisionOutcome.APPROVE,
                             by="Ama", role="coordinator", note="ok")
 
-    fresh_agent, fresh_ledger, _, _ = _setup()
+    fresh_agent, fresh_ledger, fresh_policy, _ = _setup()
     resumed = await resume_place(
         fresh_agent, answered.snapshot, answered.interrupt_id,
         {"decision": "approve", "by": answered.decision.by,
          "role": answered.decision.role, "note": answered.decision.note},
+        fresh_policy,
     )
     assert not resumed.paused
     assert any(e["kind"] == "commit_placement" for e in fresh_ledger)
