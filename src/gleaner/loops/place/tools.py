@@ -168,13 +168,43 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
 
     @tool
     def commit_placement(
-        offer_id: str, pantry_id: str, driver_id: str, weight_kg: float, eta: str
+        offer_id: str,
+        pantry_id: str,
+        driver_id: str,
+        weight_kg: float,
+        eta: str,
+        temp_class: str,
+        dietary_flags: list[str] | None = None,
+        minutes_out_of_refrigeration: float = 0.0,
+        ready_at_iso: str | None = None,
     ) -> dict:
-        """Irreversibly commit this donation to a pantry. Consequential: guarded by policy."""
+        """Irreversibly commit this donation to a pantry. Consequential: guarded by policy.
+
+        You must describe the food itself, not only where it is going. The policy that
+        decides whether this may happen without a human re-derives the cold chain, the
+        capacity and the dietary fit from these arguments against the real world, so
+        omitting or misstating them does not buy you permission - it costs it.
+
+        Args:
+            offer_id: the donation offer being placed.
+            pantry_id: destination pantry.
+            driver_id: driver who will carry it.
+            weight_kg: mass of the placement, in kilograms.
+            eta: arrival at the pantry, an ISO-8601 string WITH a timezone offset.
+            temp_class: one of "chilled", "frozen", "ambient".
+            dietary_flags: dietary markers on the food, e.g. ["pork"]. Empty when none.
+            minutes_out_of_refrigeration: cold-chain budget already spent, in minutes.
+            ready_at_iso: when the food becomes collectable, an ISO-8601 string WITH a
+                timezone offset. Omit to mean "available now".
+        """
         if _pantry(pantry_id) is None:
             return {"error": f"unknown pantry {pantry_id}"}
         if _driver(driver_id) is None:
             return {"error": f"unknown driver {driver_id}"}
+        try:
+            TempClass(temp_class)
+        except ValueError:
+            return {"error": f"unknown temp_class {temp_class!r}; use chilled, frozen or ambient"}
         entry = {
             "kind": "commit_placement",
             "offer_id": offer_id,
@@ -182,6 +212,10 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
             "driver_id": driver_id,
             "weight_kg": weight_kg,
             "eta": eta,
+            "temp_class": temp_class,
+            "dietary_flags": list(dietary_flags or []),
+            "minutes_out_of_refrigeration": minutes_out_of_refrigeration,
+            "ready_at_iso": ready_at_iso,
             "at": world.now().isoformat(),
         }
         ledger.append(entry)

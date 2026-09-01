@@ -21,19 +21,24 @@ is produced.
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from typing import Any
 
 from strands import Agent, Snapshot
 from strands.models import BedrockModel
 
 from gleaner.adapters.base import WorldAdapter
+from gleaner.domain.types import AutonomyLevel
 from gleaner.hooks.audit import AuditTrail
+from gleaner.loops.place.context import build_context_provider
 from gleaner.loops.place.tools import build_place_tools
 from gleaner.policy.escalation import EscalationPolicy
 
-REASONING_MODEL = "global.anthropic.claude-sonnet-4-6"
-REGION = "us-east-1"
+#: Overridable so a judge outside us-east-1, or on a different model, can still run
+#: this without editing source. The defaults are what the demo was recorded against.
+REASONING_MODEL = os.environ.get("GLEANER_MODEL_ID", "global.anthropic.claude-sonnet-4-6")
+REGION = os.environ.get("GLEANER_AWS_REGION", "us-east-1")
 
 SYSTEM_PROMPT = """You are Gleaner, a food rescue coordinator for Pittsburgh.
 
@@ -41,6 +46,12 @@ Your job is to get surplus food to a pantry before it spoils. Work in this order
 1. Use find_pantries to see which pantries can actually take the food.
 2. Use find_driver and estimate_arrival to check someone can get it there in time.
 3. Call commit_placement for the best option, then dispatch_driver.
+
+When you call commit_placement, pass the food's temp_class, dietary_flags,
+minutes_out_of_refrigeration and ready_at_iso along with the placement. A policy
+re-checks those against the real pantry before letting the commit through, so
+leaving them out or shading them does not help you - it only makes the call fail
+or escalate.
 
 Be decisive and brief. Do not ask the human for permission yourself - a separate
 policy decides when a human is needed, and it will interrupt you if so. If a commit
@@ -55,6 +66,19 @@ class PlaceRunResult:
     interrupt_reason: str | None
     snapshot: dict[str, Any] | None
     text: str
+    #: Every rule that fired on the pause, as ``{"rule": ..., "detail": ...}``.
+    #: ``interrupt_reason`` names only the first; the inbox wants all of them.
+    rule_hits: list[dict[str, str]] = field(default_factory=list)
+
+
+def build_default_policy(world: WorldAdapter, level: AutonomyLevel) -> EscalationPolicy:
+    """The policy as it should actually be constructed: judging the world, not the model.
+
+    ``EscalationPolicy`` takes any context provider so tests can pin a context, but in
+    production there is only one right answer, and this is it. Build a fresh policy
+    per run - see ``EscalationPolicy``'s note on ``last_hits``.
+    """
+    return EscalationPolicy(level=level, context_provider=build_context_provider(world))
 
 
 def build_place_agent(
@@ -108,6 +132,7 @@ def _result_from(agent: Agent, raw: Any, policy: EscalationPolicy) -> PlaceRunRe
             interrupt_reason=reason,
             snapshot=snapshot,
             text=str(raw),
+            rule_hits=[{"rule": hit.rule, "detail": hit.detail} for hit in policy.last_hits],
         )
     return PlaceRunResult(False, None, None, None, str(raw))
 

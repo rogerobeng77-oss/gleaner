@@ -90,7 +90,7 @@ def test_commit_placement_writes_to_the_ledger():
     tools, ledger, _ = _tools()
     result = tools["commit_placement"](
         offer_id="off-1", pantry_id="pan-1", driver_id="drv-1",
-        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00", temp_class="chilled",
     )
     assert result["status"] == "committed"
     assert len(ledger) == 1
@@ -107,7 +107,7 @@ def test_commit_placement_rejects_an_unknown_pantry_and_leaves_the_ledger_untouc
     tools, ledger, _ = _tools()
     result = tools["commit_placement"](
         offer_id="off-1", pantry_id="pan-99", driver_id="drv-1",
-        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00", temp_class="chilled",
     )
     assert "error" in result
     assert ledger == []
@@ -117,7 +117,7 @@ def test_commit_placement_rejects_an_unknown_driver_and_leaves_the_ledger_untouc
     tools, ledger, _ = _tools()
     result = tools["commit_placement"](
         offer_id="off-1", pantry_id="pan-1", driver_id="drv-99",
-        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00", temp_class="chilled",
     )
     assert "error" in result
     assert ledger == []
@@ -142,5 +142,31 @@ def test_notify_pantry_rejects_an_unknown_pantry_and_leaves_the_ledger_untouched
 def test_notify_donor_rejects_an_unknown_donor_and_leaves_the_ledger_untouched():
     tools, ledger, _ = _tools()
     result = tools["notify_donor"](donor_id="don-99", message="incoming")
+    assert "error" in result
+    assert ledger == []
+
+
+def test_commit_placement_records_the_lot_facts_the_policy_needs():
+    """The guard cannot judge a cold chain it was never told about."""
+    tools, ledger, _ = _tools()
+    tools["commit_placement"](
+        offer_id="off-1", pantry_id="pan-1", driver_id="drv-1",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00", temp_class="chilled",
+        dietary_flags=["pork"], minutes_out_of_refrigeration=90.0,
+        ready_at_iso="2026-09-01T12:15:00+00:00",
+    )
+    entry = ledger[0]
+    assert entry["temp_class"] == "chilled"
+    assert entry["dietary_flags"] == ["pork"]
+    assert entry["minutes_out_of_refrigeration"] == 90.0
+    assert entry["ready_at_iso"] == "2026-09-01T12:15:00+00:00"
+
+
+def test_commit_placement_rejects_an_unknown_temp_class():
+    tools, ledger, _ = _tools()
+    result = tools["commit_placement"](
+        offer_id="off-1", pantry_id="pan-1", driver_id="drv-1",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00", temp_class="lukewarm",
+    )
     assert "error" in result
     assert ledger == []

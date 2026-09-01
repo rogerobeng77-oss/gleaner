@@ -61,6 +61,7 @@ class SimulatedCity:
         self._pantries = self._build_pantries(rng)
         self._drivers = self._build_drivers(rng)
         self._donors = self._build_donors(rng)
+        self._offers: dict[str, DonationOffer] = {}
 
     # -- world -------------------------------------------------------------
 
@@ -143,6 +144,19 @@ class SimulatedCity:
     def donors(self) -> list[Donor]:
         return [d.model_copy(deep=True) for d in self._donors]
 
+    def offer(self, offer_id: str | None) -> DonationOffer | None:
+        """An offer this city has generated, by id, or ``None``.
+
+        Exists so the escalation policy can resolve a guarded ``commit_placement``
+        call back to the donor behind it and read that donor's real history, rather
+        than believing whatever the agent says about who is donating. A live world
+        adapter would answer this from its own records.
+        """
+        if not isinstance(offer_id, str):
+            return None
+        found = self._offers.get(offer_id)
+        return found.model_copy(deep=True) if found is not None else None
+
     def now(self) -> datetime:
         return self._now
 
@@ -162,7 +176,10 @@ class SimulatedCity:
     # -- scenario generation ----------------------------------------------
 
     def generate_offer(self, rng_seed: int | None = None) -> DonationOffer:
-        """A plausible donation offer. Deterministic for a given rng_seed."""
+        """A plausible donation offer. Deterministic for a given rng_seed.
+
+        The offer is remembered so ``offer()`` can later resolve it to its donor.
+        """
         rng = random.Random(self.seed if rng_seed is None else rng_seed)
         donor = rng.choice(self._donors)
         lots = []
@@ -178,7 +195,7 @@ class SimulatedCity:
                     dietary_flags=list(dietary),
                 )
             )
-        return DonationOffer(
+        offer = DonationOffer(
             offer_id=f"off-{rng.randint(1000, 9999)}",
             donor_id=donor.donor_id,
             lots=lots,
@@ -189,3 +206,5 @@ class SimulatedCity:
             minutes_out_of_refrigeration=float(rng.choice([0, 0, 30, 90, 200])),
             notes=rng.choice(["", "back dock, ask for the duty manager", "must go today"]),
         )
+        self._offers[offer.offer_id] = offer
+        return offer
