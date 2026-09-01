@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from gleaner.adapters.simulated import SimulatedCity
+from gleaner.domain.models import Pantry
 from gleaner.loops.place.tools import build_place_tools
 
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
@@ -170,3 +171,86 @@ def test_commit_placement_rejects_an_unknown_temp_class():
     )
     assert "error" in result
     assert ledger == []
+
+
+class _OneStopWorld:
+    """A world with a single pantry and no travel time.
+
+    Zero travel collapses arrival onto departure, so the pantry's opening hours read
+    the departure time back out exactly - which is the only way to observe, from
+    outside, *when* find_pantries thinks the driver sets off.
+    """
+
+    def __init__(self, opens=8, closes=18):
+        self._pantry = Pantry(
+            pantry_id="pan-1", name="Only", lat=40.44, lon=-79.99,
+            cold_capacity_kg=500.0, frozen_capacity_kg=500.0, dry_capacity_kg=500.0,
+            opens_at_hour=opens, closes_at_hour=closes, recent_fresh_kg_30d=100.0,
+        )
+
+    def pantries(self): return [self._pantry.model_copy(deep=True)]
+    def drivers(self): return []
+    def donors(self): return []
+    def distance_km(self, *_): return 0.0
+    def travel_minutes(self, *_): return 0.0
+    def now(self): return NOW
+
+
+def _one_stop(**kw):
+    return {t.tool_name: t for t in build_place_tools(_OneStopWorld(**kw), [])}
+
+
+def test_find_pantries_departs_when_the_food_is_ready_not_when_asked():
+    """A later ready_at moves the arrival, so a pantry shut by then drops out."""
+    tools = _one_stop()
+    kwargs = dict(
+        description="tins", weight_kg=20.0, temp_class="ambient",
+        origin_lat=40.44, origin_lon=-79.99, dietary_flags=[],
+    )
+    assert tools["find_pantries"](**kwargs)                                    # 12:00, open
+    assert tools["find_pantries"](**kwargs, ready_at_iso="2026-09-01T19:00:00+00:00") == []
+
+
+def test_find_pantries_never_departs_before_now():
+    """A ready_at already in the past does not rewind the driver to that hour."""
+    tools = _one_stop()
+    result = tools["find_pantries"](
+        description="tins", weight_kg=20.0, temp_class="ambient",
+        origin_lat=40.44, origin_lon=-79.99, dietary_flags=[],
+        ready_at_iso="2026-09-01T03:00:00+00:00",     # before opening; now is 12:00
+    )
+    assert result, "departure should be clamped to now, when the pantry is open"
+
+
+def test_find_pantries_copes_with_an_empty_network():
+    class _NoPantries(_OneStopWorld):
+        def pantries(self): return []
+
+    tools = {t.tool_name: t for t in build_place_tools(_NoPantries(), [])}
+    assert tools["find_pantries"](
+        description="tins", weight_kg=20.0, temp_class="ambient",
+        origin_lat=40.44, origin_lon=-79.99,
+    ) == []
+
+
+def test_a_ready_time_past_closing_makes_pantries_unreachable():
+    """The ETA really is computed from ready_at: push it past closing and they drop out."""
+    tools, _, _ = _tools()
+    kwargs = dict(
+        description="salad", weight_kg=20.0, temp_class="chilled",
+        origin_lat=40.44, origin_lon=-79.99, dietary_flags=[],
+    )
+    open_hours = tools["find_pantries"](**kwargs)
+    overnight = tools["find_pantries"](**kwargs, ready_at_iso="2026-09-02T03:00:00+00:00")
+    assert open_hours
+    assert len(overnight) < len(open_hours)
+
+
+def test_find_pantries_uses_a_true_median_for_the_equity_term():
+    """sorted(...)[n // 2] is the upper-middle element, which inflates every deficit."""
+    import statistics
+
+    _, _, world = _tools()
+    fresh = [p.recent_fresh_kg_30d for p in world.pantries()]
+    assert len(fresh) % 2 == 0, "this only bites on an even-sized network"
+    assert statistics.median(fresh) != sorted(fresh)[len(fresh) // 2]

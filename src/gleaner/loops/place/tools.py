@@ -11,6 +11,7 @@ package; these are thin adapters so the agent never does arithmetic itself.
 
 from __future__ import annotations
 
+import statistics
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -90,6 +91,15 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
         temperature class and how long it has already been out of refrigeration - not a
         nominal window.
 
+        Arrival is measured from the later of now and ready_at: a driver cannot collect
+        food before it exists, so an offer that is ready in six hours is judged on
+        arriving in six hours' time, not on arriving now.
+
+        The arrival estimate covers the **pickup-to-pantry leg only**. It does not
+        include the driver's own run to the pickup point, which find_driver measures
+        separately. The margin this returns is therefore optimistic; when it is thin,
+        add the driver's distance before trusting it.
+
         temp_class must be one of "chilled", "frozen", "ambient". weight_kg and
         minutes_out_of_refrigeration are in kilograms and minutes respectively.
         ready_at_iso, if given, must be an ISO-8601 string WITH a timezone offset (a
@@ -107,15 +117,19 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
         deadline = safe_until(lot.temp_class, ready_at, minutes_out_of_refrigeration)
 
         pantries = world.pantries()
+        if not pantries:
+            return []
+        # The driver cannot leave the pickup before the food is ready for collection.
+        departs_at = max(world.now(), ready_at)
         distances = {
             p.pantry_id: world.distance_km(origin_lat, origin_lon, p.lat, p.lon) for p in pantries
         }
         etas = {
-            p.pantry_id: world.now()
+            p.pantry_id: departs_at
             + timedelta(minutes=world.travel_minutes(origin_lat, origin_lon, p.lat, p.lon))
             for p in pantries
         }
-        median_fresh = sorted(p.recent_fresh_kg_30d for p in pantries)[len(pantries) // 2]
+        median_fresh = statistics.median(p.recent_fresh_kg_30d for p in pantries)
 
         ranked = rank_pantries(
             pantries, lot,
@@ -130,6 +144,8 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
                 "score": r.score,
                 "reasons": r.reasons,
                 "distance_km": distances[r.pantry_id],
+                "margin_minutes": round(r.margin_minutes, 1),
+                "capacity_fraction": round(r.capacity_fraction, 3),
             }
             for r in ranked
         ]
