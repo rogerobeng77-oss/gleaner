@@ -75,6 +75,30 @@ def test_pantry_open_at_respects_hours():
     assert not pantry.is_open_at(NOW.replace(hour=20))
 
 
+def test_pantry_opening_hours_are_read_in_the_offset_the_caller_passes():
+    """Pinning a real sharp edge rather than leaving it to be rediscovered.
+
+    ``is_open_at`` compares ``moment.hour``, so opening hours mean whatever the
+    caller's UTC offset says they mean. One instant, two offsets, two answers: a
+    Pittsburgh pantry open 08:00-18:00 is shut at 21:00 UTC and open at the same
+    instant written in EDT. Callers must pass local time. This is documented on the
+    method and asserted here so a future change to the domain cannot quietly alter
+    it without a failing test.
+    """
+    pantry = Pantry(
+        pantry_id="pan-tz", name="Hill District", lat=40.44, lon=-79.97,
+        cold_capacity_kg=500, frozen_capacity_kg=0, dry_capacity_kg=0,
+        opens_at_hour=8, closes_at_hour=18,
+    )
+    edt = timezone(timedelta(hours=-4))
+    as_utc = datetime(2026, 9, 1, 21, 0, tzinfo=timezone.utc)
+    as_local = as_utc.astimezone(edt)
+
+    assert as_utc == as_local                       # the same instant, twice over
+    assert not pantry.is_open_at(as_utc)            # 21:00 by the hour: shut
+    assert pantry.is_open_at(as_local)              # 17:00 by the hour: open
+
+
 def test_pantry_open_at_handles_overnight_window_late_evening():
     pantry = Pantry(
         pantry_id="pan-2", name="Overnight", lat=40.46, lon=-79.92,

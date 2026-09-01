@@ -59,6 +59,13 @@ class DonationOffer(BaseModel):
 
 
 class Pantry(BaseModel):
+    """A distribution site.
+
+    ``opens_at_hour`` and ``closes_at_hour`` are **local wall-clock hours** at the
+    pantry, not UTC. Everything else in this domain is a timezone-aware instant; these
+    two are not, and ``is_open_at`` explains the obligation that puts on callers.
+    """
+
     pantry_id: str
     name: str
     lat: float
@@ -89,6 +96,15 @@ class Pantry(BaseModel):
 
     def is_open_at(self, moment: datetime) -> bool:
         """Whether the pantry is open at ``moment``, by hour of day.
+
+        **Pass a datetime in the pantry's local time.** ``opens_at_hour`` and
+        ``closes_at_hour`` are compared directly against ``moment.hour``, so they are
+        interpreted in whatever UTC offset ``moment`` happens to carry. This is the
+        one place in the domain that does not compare instants: the same instant
+        expressed in two offsets can give two different answers here, and the offset
+        the caller chose is what decides. A pantry open 08:00-18:00 in Pittsburgh is
+        open at ``2026-09-01T17:00-04:00`` and closed at the identical instant written
+        ``2026-09-01T21:00+00:00``.
 
         The window may span midnight (e.g. ``opens_at_hour=22,
         closes_at_hour=6``): in that case the pantry is open from
