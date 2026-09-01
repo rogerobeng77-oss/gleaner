@@ -10,10 +10,13 @@ Presentation-agnostic, so the frontend can be designed independently.
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from gleaner.api.state import GleanerState
@@ -225,4 +228,38 @@ def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
         state().autonomy = body.level
         return get_autonomy()
 
+    _mount_console(app)
     return app
+
+
+def console_dir() -> Path | None:
+    """Where the built console lives, or ``None`` if it has not been built.
+
+    ``GLEANER_CONSOLE_DIR`` wins, because the relative fallback only holds when the
+    package is imported from a source checkout. Once ``pip install`` has moved the
+    package into site-packages, walking up from ``__file__`` lands in the Python
+    installation rather than the repository — so the container sets the variable
+    explicitly instead of relying on a path that quietly stops being true.
+    """
+    override = os.environ.get("GLEANER_CONSOLE_DIR")
+    if override:
+        path = Path(override)
+        return path if path.is_dir() else None
+    checkout = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+    return checkout if checkout.is_dir() else None
+
+
+def _mount_console(app: FastAPI) -> None:
+    """Serve the built console from the API, so deployment is one artifact.
+
+    Mounted last, and only at the root, so every ``/api`` route above still wins.
+    ``html=True`` makes unknown paths fall back to ``index.html``, which is what a
+    single-page console needs when someone reloads on a sub-route.
+
+    Absent in development — the console runs under Vite then, which proxies to this
+    API. A missing build is therefore normal, not an error, and must not stop the
+    control plane from starting.
+    """
+    console = console_dir()
+    if console is not None:
+        app.mount("/", StaticFiles(directory=console, html=True), name="console")
