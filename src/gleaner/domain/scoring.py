@@ -20,6 +20,7 @@ from datetime import datetime
 
 from gleaner.domain.capacity import can_accept, utilisation_after
 from gleaner.domain.models import FoodLot, Pantry
+from gleaner.domain.perishability import margin_minutes as _margin_minutes
 
 _BASE_SCORE = 50.0
 _MAX_DISTANCE_PENALTY = 25.0
@@ -30,10 +31,27 @@ _HEADROOM_BONUS = 15.0
 
 @dataclass(frozen=True)
 class ScoredPantry:
+    """One pantry judged as a destination for one lot.
+
+    ``reasons`` and ``blockers`` are prose for a human to read. ``margin_minutes``
+    and ``capacity_fraction`` are the same facts as numbers, so a caller that has to
+    *decide* something (the escalation policy, most importantly) does not have to
+    parse them back out of English. Both are populated even for a blocked pantry,
+    because "how badly did it miss" is exactly what a coordinator wants to know.
+
+    Attributes:
+        margin_minutes: minutes between arrival and the safety deadline. Negative
+            means the food would arrive already unsafe.
+        capacity_fraction: fraction of the relevant store (chilled / frozen / dry)
+            that would be in use after this placement, in [0.0, 1.0].
+    """
+
     pantry_id: str
     score: float
     reasons: list[str]
     blockers: list[str]
+    margin_minutes: float
+    capacity_fraction: float
 
     @property
     def is_viable(self) -> bool:
@@ -52,6 +70,8 @@ def score_pantry(
     """Score one pantry as a destination for one lot."""
     blockers: list[str] = []
     reasons: list[str] = []
+    margin = _margin_minutes(deadline, eta)
+    capacity_fraction = utilisation_after(pantry, lot)
 
     if eta > deadline:
         blockers.append(f"arrival {eta:%H:%M} is past the safety deadline {deadline:%H:%M}")
@@ -67,7 +87,7 @@ def score_pantry(
         blockers.append(f"dietary conflict: {', '.join(conflicts)}")
 
     if blockers:
-        return ScoredPantry(pantry.pantry_id, 0.0, reasons, blockers)
+        return ScoredPantry(pantry.pantry_id, 0.0, reasons, blockers, margin, capacity_fraction)
 
     score = _BASE_SCORE
     reasons.append(f"open until {pantry.closes_at_hour:02d}:00 and has room")
@@ -89,11 +109,13 @@ def score_pantry(
                 f"against a median of {median_fresh_kg_30d:.0f} kg"
             )
 
-    headroom = 1.0 - utilisation_after(pantry, lot)
+    headroom = 1.0 - capacity_fraction
     score += _HEADROOM_BONUS * headroom
-    reasons.append(f"would sit at {utilisation_after(pantry, lot):.0%} of {lot.temp_class} capacity")
+    reasons.append(f"would sit at {capacity_fraction:.0%} of {lot.temp_class} capacity")
 
-    return ScoredPantry(pantry.pantry_id, round(score, 2), reasons, blockers)
+    return ScoredPantry(
+        pantry.pantry_id, round(score, 2), reasons, blockers, margin, capacity_fraction
+    )
 
 
 def rank_pantries(

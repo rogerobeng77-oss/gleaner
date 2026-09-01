@@ -88,7 +88,21 @@ def test_ranking_returns_viable_only_best_first():
 
 
 def test_scored_pantry_is_not_viable_when_blocked():
-    assert not ScoredPantry("p", 10.0, [], ["closed on arrival"]).is_viable
+    assert not ScoredPantry("p", 10.0, [], ["closed on arrival"], 0.0, 0.0).is_viable
+
+
+def test_score_exposes_the_margin_and_capacity_as_numbers_not_prose():
+    """The escalation policy has to decide on these, so they cannot only be English."""
+    result = _score(_pantry(), _lot(weight=250.0), eta=NOW + timedelta(minutes=30))
+    assert result.margin_minutes == 150.0          # 3h deadline minus 30min arrival
+    assert result.capacity_fraction == 0.5         # 250 kg into 500 kg of chilled
+
+
+def test_blocked_pantry_still_reports_how_badly_it_missed():
+    result = _score(_pantry(), eta=DEADLINE + timedelta(minutes=45))
+    assert not result.is_viable
+    assert result.margin_minutes == -45.0
+    assert result.capacity_fraction == 0.1         # 50 kg into 500 kg
 
 
 def test_ranking_excludes_pantry_with_no_measured_distance():
