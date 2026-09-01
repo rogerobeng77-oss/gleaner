@@ -9,6 +9,8 @@ from gleaner.policy.escalation import (
     UNASSESSABLE_RULE,
     EscalationPolicy,
     decision_is_approval,
+    rules_that_paused,
+    tool_use_id_of,
 )
 from gleaner.policy.rules import PlacementContext
 
@@ -155,3 +157,67 @@ def test_an_unguarded_tool_is_never_even_described():
     )
     assert isinstance(policy.before_tool_call(_event("find_pantries")), Proceed)
     assert calls == []
+
+
+# --- naming the pause after a *later* guarded call has been decided ---------------
+#
+# Live-run defect: a model turn held both an escalating ``commit_placement`` and a
+# ``dispatch_driver``. Both went through ``before_tool_call``; the dispatch passed
+# cleanly and blanked ``last_hits``, so the inbox showed ``rule: unknown`` for a
+# capacity_overrun it could have named exactly.
+
+
+def _event_with_id(tool_name, tool_use_id, tool_input=None):
+    return SimpleNamespace(
+        tool_use={"name": tool_name, "input": tool_input or {}, "toolUseId": tool_use_id}
+    )
+
+
+def _interrupt_id(tool_use_id):
+    return f"v1:before_tool_call:{tool_use_id}:8ed8b3ec-b1a5-5d3f-9f39-0d4a2a4c1f00"
+
+
+def test_an_escalation_is_recorded_against_the_call_that_raised_it():
+    policy = _policy(_ctx(capacity_fraction=0.87))
+    policy.before_tool_call(_event_with_id("commit_placement", "tooluse_abc"))
+    assert [h.rule for h in policy.escalations["tooluse_abc"]] == ["capacity_overrun"]
+
+
+def test_a_clean_later_call_does_not_erase_the_escalation_that_paused_the_run():
+    policy = _policy(_ctx(capacity_fraction=0.87))
+    policy.before_tool_call(_event_with_id("commit_placement", "tooluse_abc"))
+    policy.context_provider = lambda _tool, _inp: _ctx()
+    assert isinstance(
+        policy.before_tool_call(_event_with_id("dispatch_driver", "tooluse_def")), Proceed
+    )
+
+    assert policy.last_hits == []                       # last_hits is still the last call
+    hits = rules_that_paused(policy, _interrupt_id("tooluse_abc"))
+    assert [h.rule for h in hits] == ["capacity_overrun"]
+    assert "87%" in hits[0].detail
+
+
+def test_a_clean_call_is_never_recorded_as_an_escalation():
+    policy = _policy()
+    policy.before_tool_call(_event_with_id("commit_placement", "tooluse_abc"))
+    assert policy.escalations == {}
+
+
+def test_tool_use_id_is_read_out_of_a_before_tool_call_interrupt_id():
+    assert tool_use_id_of(_interrupt_id("tooluse_abc")) == "tooluse_abc"
+
+
+def test_an_interrupt_id_of_another_shape_yields_no_tool_use_id():
+    for value in ("int-1", "", "v1:after_tool_call:tooluse_abc:uuid", None, 7):
+        assert tool_use_id_of(value) is None
+
+
+def test_rules_that_paused_falls_back_to_last_hits_for_an_unmatched_interrupt():
+    """A policy that never saw this interrupt still answers what it last decided."""
+    policy = _policy(_ctx(margin_minutes=2.0))
+    policy.before_tool_call(_event("commit_placement"))          # no toolUseId at all
+    assert [h.rule for h in rules_that_paused(policy, "int-1")] == ["tight_window"]
+
+
+def test_rules_that_paused_is_empty_when_the_policy_decided_nothing():
+    assert rules_that_paused(_policy(), _interrupt_id("tooluse_abc")) == []

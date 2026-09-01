@@ -34,7 +34,7 @@ from gleaner.domain.types import AutonomyLevel
 from gleaner.hooks.audit import AuditTrail
 from gleaner.loops.place.context import build_context_provider
 from gleaner.loops.place.tools import build_place_tools
-from gleaner.policy.escalation import EscalationPolicy
+from gleaner.policy.escalation import EscalationPolicy, rules_that_paused
 
 #: Overridable so a judge outside us-east-1, or on a different model, can still run
 #: this without editing source. The defaults are what the demo was recorded against.
@@ -66,10 +66,17 @@ class PlaceRunResult:
     interrupt_id: str | None
     interrupt_reason: str | None
     snapshot: dict[str, Any] | None
+    #: The agent's own account of the run, as text. Whatever the model said last -
+    #: on a paused run that is a half-finished thought, so it is not what a
+    #: coordinator is shown. Use ``prompt`` for that.
     text: str
     #: Every rule that fired on the pause, as ``{"rule": ..., "detail": ...}``.
     #: ``interrupt_reason`` names only the first; the inbox wants all of them.
     rule_hits: list[dict[str, str]] = field(default_factory=list)
+    #: The one sentence a human is being asked to answer, and nothing else - no
+    #: interrupt id, no Python repr of the interrupt list. Empty on a run that
+    #: did not pause.
+    prompt: str = ""
 
 
 def describe_offer(offer: DonationOffer) -> str:
@@ -125,36 +132,60 @@ def _result_from(agent: Agent, raw: Any, policy: EscalationPolicy) -> PlaceRunRe
     ``interrupt.name`` is always the intervention handler's own name
     (``"gleaner-escalation"``), never the specific rule that fired - Strands has no
     concept of a per-interrupt reason string beyond the ``Confirm`` prompt text, which
-    is meant for a human to read, not to pattern-match on. The actual rule name always
-    comes from ``policy.last_hits``, which ``EscalationPolicy.before_tool_call``
-    populates on the very call that raised this interrupt.
+    is meant for a human to read, not to pattern-match on. The actual rule name comes
+    from the policy, via ``rules_that_paused``, which matches the interrupt back to
+    the guarded call that raised it rather than trusting ``last_hits`` blindly. That
+    matters because a model turn can hold several tool uses: a live run escalated on
+    ``commit_placement`` and then evaluated a clean ``dispatch_driver`` in the same
+    turn, which cleared ``last_hits`` before this function ever read it, and the
+    coordinator was shown ``rule: unknown`` for an escalation the system could
+    perfectly well name.
 
     This function is the single place that does that lookup, and both ``run_place``
     and ``resume_place`` route through it, so a pause that happens mid-resume (e.g.
     approving ``commit_placement`` walks straight into a guarded ``dispatch_driver``)
     gets a real reason too, not just the first pause of a run.
 
-    If ``policy.last_hits`` is empty while the run is paused - the policy instance
-    passed in was not the one that actually decided this interrupt, most likely -
-    there is no rule to report and ``interrupt_reason`` is deliberately left ``None``
-    rather than guessing. Callers (the decision inbox included) must treat ``None``
-    as "reason unknown", never as "no rule fired": the run would not be paused at all
-    if no rule had fired.
+    If no hits can be found for a paused run - the policy instance passed in was not
+    the one that actually decided this interrupt, most likely - there is no rule to
+    report and ``interrupt_reason`` is deliberately left ``None`` rather than
+    guessing. Callers (the decision inbox included) must treat ``None`` as "reason
+    unknown", never as "no rule fired": the run would not be paused at all if no rule
+    had fired.
     """
     interrupts = getattr(raw, "interrupts", None)
     if raw.stop_reason == "interrupt" and interrupts:
         interrupt = interrupts[0]
         snapshot = dataclasses.asdict(agent.take_snapshot(preset="session"))
-        reason = policy.last_hits[0].rule if policy.last_hits else None
+        hits = rules_that_paused(policy, getattr(interrupt, "id", None))
+        rule_hits = [{"rule": hit.rule, "detail": hit.detail} for hit in hits]
         return PlaceRunResult(
             paused=True,
             interrupt_id=interrupt.id,
-            interrupt_reason=reason,
+            interrupt_reason=hits[0].rule if hits else None,
             snapshot=snapshot,
             text=str(raw),
-            rule_hits=[{"rule": hit.rule, "detail": hit.detail} for hit in policy.last_hits],
+            rule_hits=rule_hits,
+            prompt=_prompt_for(interrupt, rule_hits),
         )
     return PlaceRunResult(False, None, None, None, str(raw))
+
+
+def _prompt_for(interrupt: Any, rule_hits: list[dict[str, str]]) -> str:
+    """The question to put in front of a coordinator, in their language.
+
+    ``interrupt.reason`` is the ``Confirm`` prompt the policy wrote, which is already
+    a plain sentence naming the real numbers. It is the only part of the interrupt a
+    human is meant to read: the interrupt *id* is machinery for resuming the run and
+    belongs in the inbox's ``interrupt_id``, not in the text on the screen.
+
+    Falls back to the rule details when an interrupt carries no prompt, so the
+    coordinator is never shown an empty question while a rule plainly fired.
+    """
+    reason = getattr(interrupt, "reason", None)
+    if isinstance(reason, str) and reason.strip():
+        return reason.strip()
+    return " ".join(hit["detail"] for hit in rule_hits)
 
 
 async def run_place(agent: Agent, prompt: str, policy: EscalationPolicy) -> PlaceRunResult:

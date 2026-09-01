@@ -124,3 +124,57 @@ async def test_resume_place_also_names_the_reason_not_just_run_place():
     )
     assert result.paused
     assert result.interrupt_reason == "tight_window"
+
+
+# --- the prompt a coordinator actually reads ------------------------------------
+#
+# Live-run defect: ``/api/inbox`` returned ``prompt`` as ``str(raw)`` - the Python
+# repr of the interrupt list, internal interrupt ids and all. The interrupt id is
+# still needed to resume the run, so it stays in ``interrupt_id``; it has no business
+# in the sentence on the coordinator's screen.
+
+CONFIRM_PROMPT = (
+    "Placement would fill 87% of the store; balanced allows 80%. "
+    "Approve this commit placement?"
+)
+
+
+def _fake_interrupt_with(prompt: str, interrupt_id: str = "v1:before_tool_call:tooluse_x:u"):
+    return type("FakeInterrupt", (), {"id": interrupt_id, "name": "gleaner-escalation",
+                                      "reason": prompt})()
+
+
+def _raw_with(interrupt) -> object:
+    return type("FakeResult", (), {"stop_reason": "interrupt", "interrupts": [interrupt]})()
+
+
+def test_the_prompt_is_the_confirm_sentence_not_the_raw_result():
+    raw = _raw_with(_fake_interrupt_with(CONFIRM_PROMPT))
+    result = _result_from(_FakeAgent(raw), raw, _fake_policy([RuleHit("capacity_overrun", "...")]))
+    assert result.prompt == CONFIRM_PROMPT
+
+
+def test_the_prompt_carries_no_interrupt_id_and_no_python_repr():
+    raw = _raw_with(_fake_interrupt_with(CONFIRM_PROMPT))
+    result = _result_from(_FakeAgent(raw), raw, _fake_policy([RuleHit("capacity_overrun", "...")]))
+    assert "v1:before_tool_call" not in result.prompt
+    assert result.interrupt_id not in result.prompt
+    for punctuation in ("[{", "}]", "'reason':", "'id':", "None"):
+        assert punctuation not in result.prompt
+    # ...and the id is still available for the resume path.
+    assert result.interrupt_id == "v1:before_tool_call:tooluse_x:u"
+
+
+def test_the_prompt_falls_back_to_the_rule_details_when_the_interrupt_has_none():
+    raw = _raw_with(_fake_interrupt_with(""))
+    result = _result_from(
+        _FakeAgent(raw), raw, _fake_policy([RuleHit("tight_window", "Only 12 minutes of slack.")])
+    )
+    assert result.prompt == "Only 12 minutes of slack."
+
+
+def test_a_finished_run_has_no_prompt_to_answer():
+    result = _result_from(
+        _FakeAgent(_fake_finished_raw()), _fake_finished_raw(), _fake_policy([])
+    )
+    assert result.prompt == ""

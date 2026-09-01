@@ -162,7 +162,7 @@ def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
                 decision_id=f"dec-{uuid.uuid4().hex[:8]}",
                 offer_id=offer.offer_id,
                 rule=result.interrupt_reason or "unknown",
-                prompt=result.text,
+                prompt=result.prompt,
             )
             current.inbox.open(
                 decision,

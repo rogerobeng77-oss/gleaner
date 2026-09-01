@@ -31,6 +31,10 @@ GUARDED_TOOLS: frozenset[str] = frozenset(
     {"commit_placement", "dispatch_driver", "notify_donor", "notify_pantry", "send_outreach"}
 )
 
+#: How Strands builds the id of an interrupt raised from ``before_tool_call``:
+#: ``v1:before_tool_call:{toolUseId}:{uuid5}``. Parsed, never constructed, here.
+_INTERRUPT_ID_PREFIX: tuple[str, str] = ("v1", "before_tool_call")
+
 #: Reported when the context provider cannot describe a guarded tool.
 #:
 #: Deliberately not a rule in ``rules.py``: it is not a judgement about a placement,
@@ -61,11 +65,17 @@ def decision_is_approval(response: Any) -> bool:
 class EscalationPolicy(InterventionHandler):
     """Decides, per consequential tool call, whether the agent may act alone.
 
-    **Build one instance per run.** ``last_hits`` is per-instance mutable state that
-    callers read *after* the run returns, to name the rule that paused it. Two offers
-    sharing a policy would overwrite each other's hits and the inbox would attribute
-    one offer's escalation reason to the other. ``build_default_policy`` in the PLACE
-    runner is the intended constructor.
+    **Build one instance per run.** ``last_hits`` and ``escalations`` are per-instance
+    mutable state that callers read *after* the run returns, to name the rule that
+    paused it. Two offers sharing a policy would overwrite each other's hits and the
+    inbox would attribute one offer's escalation reason to the other.
+    ``build_default_policy`` in the PLACE runner is the intended constructor.
+
+    ``last_hits`` is the most recent decision, whatever tool it was about; it is
+    cleared by any guarded call that passes cleanly. ``escalations`` keeps the hits of
+    each call that actually escalated, keyed by its tool-use id, so a pause can still
+    be named after a later call has overwritten ``last_hits``. Read it through
+    ``rules_that_paused``.
 
     ``before_tool_call`` must be defined at class level - Strands inspects the class
     to discover which lifecycle methods a handler implements, so assigning the method
@@ -82,6 +92,7 @@ class EscalationPolicy(InterventionHandler):
         self.level = level
         self.context_provider = context_provider
         self.last_hits: list[RuleHit] = []
+        self.escalations: dict[str, list[RuleHit]] = {}
 
     def before_tool_call(self, event: Any) -> Any:
         tool_name = event.tool_use["name"]
@@ -106,6 +117,16 @@ class EscalationPolicy(InterventionHandler):
         if not hits:
             return Proceed(reason=f"within {self.level} autonomy limits")
 
+        # Keep the hits alongside the call that raised the interrupt, not only in
+        # ``last_hits``. A model turn can contain several tool uses, and every one of
+        # them runs through here: a clean ``dispatch_driver`` immediately after an
+        # escalating ``commit_placement`` overwrites ``last_hits`` with an empty list,
+        # and the reason for the pause is gone before the run has even returned. That
+        # is exactly how the inbox came to show ``rule: unknown``.
+        tool_use_id = event.tool_use.get("toolUseId")
+        if isinstance(tool_use_id, str) and tool_use_id:
+            self.escalations[tool_use_id] = hits
+
         primary = hits[0]
         detail = " ".join(hit.detail for hit in hits)
         return Confirm(
@@ -113,3 +134,38 @@ class EscalationPolicy(InterventionHandler):
             reason=primary.rule,
             evaluate=decision_is_approval,
         )
+
+
+def tool_use_id_of(interrupt_id: Any) -> str | None:
+    """The tool-use id inside a ``before_tool_call`` interrupt id, or ``None``.
+
+    Anything that is not one of those ids - a test's ``"int-1"``, an interrupt from a
+    different lifecycle point, a ``None`` - comes back ``None`` rather than a guess.
+    """
+    if not isinstance(interrupt_id, str):
+        return None
+    parts = interrupt_id.split(":")
+    if len(parts) < 4 or tuple(parts[:2]) != _INTERRUPT_ID_PREFIX:
+        return None
+    # The trailing segment is a uuid5 of the handler name; everything between the
+    # prefix and it is the tool-use id, joined back in case it ever contains a colon.
+    return ":".join(parts[2:-1]) or None
+
+
+def rules_that_paused(policy: Any, interrupt_id: Any) -> list[RuleHit]:
+    """The rules that fired on the exact call this interrupt belongs to.
+
+    Prefers the per-call record over ``last_hits``, because ``last_hits`` describes
+    whichever guarded call ran *last*, which is not necessarily the one that paused
+    the run. Falls back to ``last_hits`` when the interrupt cannot be matched to a
+    recorded escalation, which keeps the answer for a policy that never saw this
+    interrupt exactly what it was before: whatever it last decided, or nothing.
+
+    Duck-typed on purpose: it reads only ``escalations`` and ``last_hits``, so a test
+    stand-in for a policy still works.
+    """
+    escalations = getattr(policy, "escalations", None) or {}
+    tool_use_id = tool_use_id_of(interrupt_id)
+    if tool_use_id is not None and tool_use_id in escalations:
+        return list(escalations[tool_use_id])
+    return list(getattr(policy, "last_hits", None) or [])
