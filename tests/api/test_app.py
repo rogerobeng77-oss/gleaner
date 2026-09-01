@@ -2,10 +2,37 @@ from fastapi.testclient import TestClient
 
 from gleaner.api.app import create_app
 from gleaner.domain.models import Decision
+from gleaner.loops.place.runner import PlaceRunResult
 
 
 def _client():
     app = create_app()
+    return TestClient(app), app.state.gleaner
+
+
+OFFER = {
+    "offer_id": "off-1",
+    "donor_id": "don-1",
+    "lots": [{"description": "salad", "weight_kg": 40.0, "temp_class": "chilled"}],
+    "ready_at": "2026-09-01T12:00:00+00:00",
+    "pickup_address": "Giant Eagle, Pittsburgh, PA",
+    "lat": 40.44,
+    "lon": -79.99,
+}
+
+
+def _stub_client(result: PlaceRunResult, commits: list[dict] | None = None):
+    """An app whose PLACE loop is a stub, so no test ever reaches Bedrock.
+
+    The stub writes into the same ledger a real run's tools would, because the route
+    reads committed weight back out of it.
+    """
+    async def runner(state, offer):
+        for entry in commits or []:
+            state.ledger.append(entry)
+        return result
+
+    app = create_app(offer_runner=runner)
     return TestClient(app), app.state.gleaner
 
 
@@ -97,3 +124,78 @@ def test_ledger_and_timeline_start_empty():
     client, _ = _client()
     assert client.get("/api/ledger").json() == []
     assert client.get("/api/timeline").json() == []
+
+
+def _commit(offer_id="off-1", weight_kg=40.0):
+    return {"kind": "commit_placement", "offer_id": offer_id, "weight_kg": weight_kg,
+            "at": "2026-09-01T12:00:00+00:00"}
+
+
+def test_a_placed_offer_fills_the_ledger_timeline_and_impact():
+    """These three endpoints were empty by construction: nothing ever wrote them."""
+    client, state = _stub_client(
+        PlaceRunResult(False, None, None, None, "placed it"), commits=[_commit()]
+    )
+    body = client.post("/api/offers", json=OFFER).json()
+    assert body["status"] == "placed"
+    assert body["committed_kg"] == 40.0
+
+    assert client.get("/api/ledger").json()
+    assert client.get("/api/timeline").json()
+    impact = client.get("/api/impact").json()
+    assert impact["placements"] == 1
+    assert impact["kg_rescued"] == 40.0
+    assert impact["meals"] == 73                       # 40 / 0.544
+    assert state.inbox.pending() == []
+
+
+def test_an_escalated_offer_lands_in_the_inbox_with_its_rule():
+    client, state = _stub_client(
+        PlaceRunResult(
+            True, "int-1", "tight_window", {"scope": "agent"}, "needs a human",
+            rule_hits=[{"rule": "tight_window", "detail": "Only 12 minutes of slack."}],
+        )
+    )
+    body = client.post("/api/offers", json=OFFER).json()
+    assert body["status"] == "awaiting_decision"
+    assert body["rule"] == "tight_window"
+
+    pending = client.get("/api/inbox").json()
+    assert len(pending) == 1
+    assert pending[0]["decision_id"] == body["decision_id"]
+    assert pending[0]["rule"] == "tight_window"
+    assert pending[0]["rule_hits"][0]["detail"] == "Only 12 minutes of slack."
+    parked = state.inbox.get(body["decision_id"])
+    assert parked.interrupt_id == "int-1"
+    assert parked.snapshot == {"scope": "agent"}       # resumable, not just reported
+
+
+def test_an_escalated_offer_counts_no_impact():
+    """A paused run has moved no food. Counting it would inflate the headline number."""
+    client, _ = _stub_client(PlaceRunResult(True, "int-1", "novel_donor", {}, "?"))
+    client.post("/api/offers", json=OFFER)
+    assert client.get("/api/impact").json()["placements"] == 0
+
+
+def test_an_offer_the_agent_declined_to_place_is_recorded_as_such():
+    client, _ = _stub_client(PlaceRunResult(False, None, None, None, "found nowhere"))
+    body = client.post("/api/offers", json=OFFER).json()
+    assert body["status"] == "no_placement"
+    assert client.get("/api/impact").json()["placements"] == 0
+    assert client.get("/api/timeline").json()          # still visible on the timeline
+
+
+def test_impact_counts_only_the_weight_committed_for_this_offer():
+    client, _ = _stub_client(
+        PlaceRunResult(False, None, None, None, "placed it"),
+        commits=[_commit(weight_kg=40.0), _commit(offer_id="off-other", weight_kg=999.0)],
+    )
+    client.post("/api/offers", json=OFFER)
+    assert client.get("/api/impact").json()["kg_rescued"] == 40.0
+
+
+def test_a_malformed_offer_is_rejected_before_any_agent_runs():
+    client, state = _stub_client(PlaceRunResult(False, None, None, None, ""))
+    response = client.post("/api/offers", json={**OFFER, "lots": []})
+    assert response.status_code == 422
+    assert state.ledger == []

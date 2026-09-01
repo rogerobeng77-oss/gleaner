@@ -57,6 +57,15 @@ class AuditTrail(HookProvider):
     def _add(self, kind: str, label: str, detail: dict[str, Any] | None = None) -> None:
         self.entries.append(TimelineEntry(kind, label, _now(), detail or {}))
 
+    def record(self, kind: str, label: str, detail: dict[str, Any] | None = None) -> None:
+        """Add an entry the hooks cannot see.
+
+        Everything a Strands agent does arrives through ``register_hooks``. The things
+        that happen *around* a run - an offer arriving, a run being parked for a human -
+        happen outside the agent and would otherwise leave a hole in the timeline.
+        """
+        self._add(kind, label, detail)
+
     def on_before_invocation(self, _event: Any) -> None:
         self._add("invocation", "agent started")
 

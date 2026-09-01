@@ -29,6 +29,7 @@ from strands import Agent, Snapshot
 from strands.models import BedrockModel
 
 from gleaner.adapters.base import WorldAdapter
+from gleaner.domain.models import DonationOffer
 from gleaner.domain.types import AutonomyLevel
 from gleaner.hooks.audit import AuditTrail
 from gleaner.loops.place.context import build_context_provider
@@ -69,6 +70,25 @@ class PlaceRunResult:
     #: Every rule that fired on the pause, as ``{"rule": ..., "detail": ...}``.
     #: ``interrupt_reason`` names only the first; the inbox wants all of them.
     rule_hits: list[dict[str, str]] = field(default_factory=list)
+
+
+def describe_offer(offer: DonationOffer) -> str:
+    """The offer as a prompt, stating every fact the agent needs and none it does not."""
+    lots = "; ".join(
+        f"{lot.weight_kg:.1f} kg {lot.description} ({lot.temp_class}"
+        + (f", flagged {', '.join(lot.dietary_flags)}" if lot.dietary_flags else "")
+        + ")"
+        for lot in offer.lots
+    )
+    return (
+        f"Offer {offer.offer_id} from donor {offer.donor_id} at {offer.pickup_address} "
+        f"({offer.lat:.4f}, {offer.lon:.4f}).\n"
+        f"Food: {lots}.\n"
+        f"Ready at {offer.ready_at.isoformat()}. It has been out of refrigeration for "
+        f"{offer.minutes_out_of_refrigeration:.0f} minutes.\n"
+        f"{offer.notes or 'No further notes.'}\n"
+        f"Place it: find a pantry, find a driver, then commit and dispatch."
+    )
 
 
 def build_default_policy(world: WorldAdapter, level: AutonomyLevel) -> EscalationPolicy:
