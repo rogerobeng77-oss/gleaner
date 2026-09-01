@@ -35,6 +35,7 @@ from gleaner.hooks.audit import AuditTrail
 from gleaner.loops.place.context import build_context_provider
 from gleaner.loops.place.tools import build_place_tools
 from gleaner.policy.dependency import PlacementDependencyGuard
+from gleaner.policy.rules import THRESHOLDS
 from gleaner.policy.escalation import EscalationPolicy, rules_that_paused
 
 #: Overridable so a judge outside us-east-1, or on a different model, can still run
@@ -131,7 +132,7 @@ def build_place_agent(
     """
     return Agent(
         model=BedrockModel(model_id=REASONING_MODEL, region_name=REGION),
-        tools=build_place_tools(world, ledger),
+        tools=build_place_tools(world, ledger, THRESHOLDS[policy.level].max_capacity_fraction),
         interventions=[PlacementDependencyGuard(ledger, trail), policy],
         hooks=[trail],
         system_prompt=SYSTEM_PROMPT,

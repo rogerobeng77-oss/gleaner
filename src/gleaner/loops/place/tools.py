@@ -24,7 +24,11 @@ from gleaner.domain.scoring import rank_pantries
 from gleaner.domain.types import TempClass
 
 
-def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list:
+def build_place_tools(
+    world: WorldAdapter,
+    ledger: list[dict[str, Any]],
+    fill_ceiling: float | None = None,
+) -> list:
     """Build the tool set bound to a world and an append-only action ledger."""
 
     def _pantry(pantry_id: str):
@@ -135,6 +139,7 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
             pantries, lot,
             etas=etas, deadline=deadline,
             distances_km=distances, median_fresh_kg_30d=median_fresh,
+            fill_ceiling=fill_ceiling,
         )
         by_id = {p.pantry_id: p for p in pantries}
         return [

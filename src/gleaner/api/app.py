@@ -28,13 +28,18 @@ from gleaner.loops.place.runner import (
     build_default_policy,
     build_place_agent,
     describe_offer,
+    resume_place,
     run_place,
 )
+from gleaner.persistence.inbox import PendingDecision
 from gleaner.policy.rules import THRESHOLDS
 
 #: How an offer gets run. Injectable because the default reaches Amazon Bedrock, and
 #: no test may do that; a test passes a stub returning a canned ``PlaceRunResult``.
 OfferRunner = Callable[[GleanerState, DonationOffer], Awaitable[PlaceRunResult]]
+
+#: How an answered decision resumes its paused run. Injectable for the same reason.
+DecisionResumer = Callable[[GleanerState, PendingDecision], Awaitable[PlaceRunResult]]
 
 
 async def run_offer_with_agent(state: GleanerState, offer: DonationOffer) -> PlaceRunResult:
@@ -48,6 +53,66 @@ async def run_offer_with_agent(state: GleanerState, offer: DonationOffer) -> Pla
     return await run_place(agent, describe_offer(offer), policy)
 
 
+async def resume_with_agent(state: GleanerState, pending: PendingDecision) -> PlaceRunResult:
+    """The real resumer: load the parked snapshot into a fresh agent and answer it.
+
+    A *fresh* policy instance, deliberately. ``EscalationPolicy`` carries per-run
+    mutable state, so reusing the one that paused this run would attribute its old
+    hits to whatever the resumed run does next.
+    """
+    policy = build_default_policy(state.world, state.autonomy)
+    agent = build_place_agent(state.world, state.ledger, policy, state.trail)
+    decision = pending.decision
+    return await resume_place(
+        agent,
+        pending.snapshot,
+        pending.interrupt_id,
+        {
+            "decision": decision.outcome.value if decision.outcome else "reject",
+            "by": decision.by,
+            "role": decision.role,
+            "note": decision.note,
+        },
+        policy,
+    )
+
+
+def _account_for(state: GleanerState, offer_id: str) -> float:
+    """Recompute this offer's impact entry from the ledger. Returns committed kg.
+
+    Replaces rather than appends, because an offer can reach the ledger twice: once
+    when the run commits part of a load and pauses, and again when a human approves
+    the rest. Appending would count the same kilograms as two placements and inflate
+    the only number on the home screen anybody reads.
+
+    The ledger is the source of truth here, not the run's exit status. A run that
+    committed nothing has nothing in the ledger and so contributes nothing, paused
+    or not.
+    """
+    committed_kg = sum(
+        float(e.get("weight_kg", 0.0))
+        for e in state.ledger
+        if e.get("kind") == "commit_placement" and e.get("offer_id") == offer_id
+    )
+    state.impact[:] = [e for e in state.impact if e.offer_id != offer_id]
+    if committed_kg <= 0:
+        return 0.0
+
+    offer = state.world.offer(offer_id)
+    state.impact.append(
+        ImpactEntry(
+            offer_id=offer_id,
+            kg=committed_kg,
+            meals=meals_from_kg(committed_kg),
+            co2e_kg=co2e_avoided_kg(committed_kg),
+            # Without a coordinator on this offer, this is what would have gone to
+            # landfill. The whole donation, not just the placed part.
+            counterfactual_kg_wasted=offer.total_weight_kg if offer else committed_kg,
+        )
+    )
+    return committed_kg
+
+
 class AnswerRequest(BaseModel):
     outcome: DecisionOutcome
     by: str
@@ -59,11 +124,15 @@ class AutonomyRequest(BaseModel):
     level: AutonomyLevel
 
 
-def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
-    """Build the app. Pass ``offer_runner`` to run offers without calling a model."""
+def create_app(
+    offer_runner: OfferRunner | None = None,
+    decision_resumer: DecisionResumer | None = None,
+) -> FastAPI:
+    """Build the app. Pass the two runners to drive it without calling a model."""
     app = FastAPI(title="Gleaner", version="0.1.0")
     app.state.gleaner = GleanerState()
     run_this_offer: OfferRunner = offer_runner or run_offer_with_agent
+    resume_this_decision: DecisionResumer = decision_resumer or resume_with_agent
 
     def state() -> GleanerState:
         return app.state.gleaner
@@ -96,13 +165,43 @@ def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
         ]
 
     @app.post("/api/inbox/{decision_id}/answer")
-    def answer(decision_id: str, body: AnswerRequest) -> dict:
+    async def answer(decision_id: str, body: AnswerRequest) -> dict:
+        """Record the human's decision, then resume the run that was waiting on it.
+
+        Recording alone is not enough, and for a while that was all this did: the
+        decision moved out of the inbox, the snapshot was dropped on the floor, and
+        an approved 400 kg placement was never committed. The whole premise is that
+        a paused run picks up where it stopped, so the resume belongs on this path,
+        not in a test that calls ``resume_place`` directly.
+        """
         try:
             answered = state().inbox.answer(
                 decision_id, body.outcome, by=body.by, role=body.role, note=body.note
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        current = state()
+        resumed = await resume_this_decision(current, answered)
+        offer_id = answered.decision.offer_id
+        _account_for(current, offer_id)
+        current.trail.record("decision", f"{body.outcome.value} on {decision_id}", {
+            "offer_id": offer_id,
+            "paused_again": resumed.paused,
+        })
+        if resumed.paused:
+            follow_up = Decision(
+                decision_id=f"dec-{uuid.uuid4().hex[:8]}",
+                offer_id=offer_id,
+                rule=resumed.interrupt_reason or "unknown",
+                prompt=resumed.prompt,
+            )
+            current.inbox.open(
+                follow_up,
+                interrupt_id=resumed.interrupt_id or "",
+                snapshot=resumed.snapshot or {},
+                rule_hits=resumed.rule_hits,
+            )
         return answered.decision.model_dump(mode="json")
 
     @app.post("/api/offers")
@@ -142,23 +241,7 @@ def create_app(offer_runner: OfferRunner | None = None) -> FastAPI:
         result = await run_this_offer(current, offer)
 
         # Read the ledger before branching. A paused run may still have committed.
-        committed_kg = sum(
-            float(e.get("weight_kg", 0.0))
-            for e in current.ledger
-            if e.get("kind") == "commit_placement" and e.get("offer_id") == offer.offer_id
-        )
-        if committed_kg > 0:
-            current.impact.append(
-                ImpactEntry(
-                    offer_id=offer.offer_id,
-                    kg=committed_kg,
-                    meals=meals_from_kg(committed_kg),
-                    co2e_kg=co2e_avoided_kg(committed_kg),
-                    # Without a coordinator on this offer, this is what would have
-                    # gone to landfill. The whole donation, not just the placed part.
-                    counterfactual_kg_wasted=offer.total_weight_kg,
-                )
-            )
+        committed_kg = _account_for(current, offer.offer_id)
 
         if result.paused:
             decision = Decision(

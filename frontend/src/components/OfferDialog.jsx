@@ -6,6 +6,12 @@ import { useStore } from "../store";
 export default function OfferDialog({ onClose }) {
   const submitOffer = useStore((s) => s.submitOffer);
   const busy = useStore((s) => s.busy) === "new-offer";
+  // The offer is timestamped on the world's clock, not the browser's. The demo
+  // city is a fixed, seeded Tuesday, and its pantries close between 16:00 and
+  // 19:00 on that day. An offer stamped with real wall-clock time therefore
+  // arrives after every pantry has shut, find_pantries returns nothing, and the
+  // agent correctly places nothing — which looks exactly like a broken demo.
+  const worldNow = useStore((s) => s.world.now);
   const [f, setF] = useState({
     description: "pork sausages", weight_kg: 120, temp_class: "chilled",
     dietary_flags: "pork", minutes_out_of_refrigeration: 35,
@@ -15,7 +21,7 @@ export default function OfferDialog({ onClose }) {
 
   async function submit(e) {
     e.preventDefault();
-    const now = new Date();
+    const readyAt = worldNow || new Date().toISOString();
     await submitOffer({
       offer_id: `off-${Date.now().toString(36)}`,
       donor_id: "don-1",
@@ -26,7 +32,7 @@ export default function OfferDialog({ onClose }) {
         allergens: [],
         dietary_flags: f.dietary_flags ? f.dietary_flags.split(",").map((s) => s.trim()).filter(Boolean) : [],
       }],
-      ready_at: now.toISOString(),
+      ready_at: readyAt,
       pickup_address: `${f.donor}, Pittsburgh, PA`,
       lat: 40.4406, lon: -79.9959,
       minutes_out_of_refrigeration: Number(f.minutes_out_of_refrigeration),

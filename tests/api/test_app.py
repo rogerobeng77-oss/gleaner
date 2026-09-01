@@ -1,12 +1,20 @@
 from fastapi.testclient import TestClient
 
 from gleaner.api.app import create_app
-from gleaner.domain.models import Decision
+from gleaner.domain.models import Decision, DonationOffer
 from gleaner.loops.place.runner import PlaceRunResult
 
 
-def _client():
-    app = create_app()
+def _client(resumer=None):
+    """An app with a stub resumer, so answering a decision never reaches Bedrock.
+
+    The default stub commits nothing, which is the right neutral for tests about
+    recording a decision. Tests about the resume itself pass their own.
+    """
+    async def noop_resume(state, pending):
+        return PlaceRunResult(False, None, None, None, "resumed")
+
+    app = create_app(decision_resumer=resumer or noop_resume)
     return TestClient(app), app.state.gleaner
 
 
@@ -32,7 +40,10 @@ def _stub_client(result: PlaceRunResult, commits: list[dict] | None = None):
             state.ledger.append(entry)
         return result
 
-    app = create_app(offer_runner=runner)
+    async def noop_resume(state, pending):
+        return PlaceRunResult(False, None, None, None, "resumed")
+
+    app = create_app(offer_runner=runner, decision_resumer=noop_resume)
     return TestClient(app), app.state.gleaner
 
 
@@ -277,3 +288,79 @@ def test_a_malformed_offer_is_rejected_before_any_agent_runs():
     response = client.post("/api/offers", json={**OFFER, "lots": []})
     assert response.status_code == 422
     assert state.ledger == []
+
+
+def test_approving_a_decision_resumes_the_run_and_commits():
+    """The defect this pins: answering recorded the human and dropped the snapshot.
+
+    ``resume_place`` existed and was tested directly, but nothing on the API path
+    ever called it, so an approved 400 kg placement cleared the inbox and committed
+    nothing. The console said the decision was recorded; the ledger stayed empty.
+    """
+    resumed_with = {}
+
+    async def resumer(state, pending):
+        resumed_with["interrupt_id"] = pending.interrupt_id
+        resumed_with["snapshot"] = pending.snapshot
+        resumed_with["outcome"] = pending.decision.outcome.value
+        state.ledger.append(_commit(weight_kg=400.0))
+        return PlaceRunResult(False, None, None, None, "committed after approval")
+
+    client, state = _client(resumer=resumer)
+    state.world.register_offer(DonationOffer(**{**OFFER, "lots": [
+        {"description": "sausages", "weight_kg": 400.0, "temp_class": "chilled"}]}))
+    state.inbox.open(
+        Decision(decision_id="dec-1", offer_id="off-1", rule="over_value_threshold",
+                 prompt="Approve?"),
+        interrupt_id="int-9", snapshot={"scope": "agent"}, rule_hits=[],
+    )
+
+    client.post("/api/inbox/dec-1/answer",
+                json={"outcome": "approve", "by": "Ama", "role": "coordinator", "note": ""})
+
+    assert resumed_with == {"interrupt_id": "int-9", "snapshot": {"scope": "agent"},
+                            "outcome": "approve"}
+    assert any(e["kind"] == "commit_placement" for e in state.ledger)
+    impact = client.get("/api/impact").json()
+    assert impact["placements"] == 1
+    assert impact["kg_rescued"] == 400.0
+
+
+def test_a_resumed_run_that_pauses_again_goes_back_into_the_inbox():
+    async def resumer(state, pending):
+        return PlaceRunResult(True, "int-10", "novel_donor", {"scope": "agent"},
+                              "still needs a human",
+                              rule_hits=[{"rule": "novel_donor", "detail": "first offer"}])
+
+    client, state = _client(resumer=resumer)
+    state.inbox.open(
+        Decision(decision_id="dec-1", offer_id="off-1", rule="tight_window", prompt="?"),
+        interrupt_id="int-9", snapshot={"scope": "agent"}, rule_hits=[],
+    )
+    client.post("/api/inbox/dec-1/answer",
+                json={"outcome": "approve", "by": "Ama", "role": "coordinator", "note": ""})
+
+    pending = client.get("/api/inbox").json()
+    assert len(pending) == 1
+    assert pending[0]["rule"] == "novel_donor"
+    assert state.inbox.get(pending[0]["decision_id"]).interrupt_id == "int-10"
+
+
+def test_a_resumed_commit_is_not_counted_twice():
+    """An offer can reach the ledger before the pause and again after the approval."""
+    async def resumer(state, pending):
+        state.ledger.append(_commit(weight_kg=60.0))
+        return PlaceRunResult(False, None, None, None, "done")
+
+    client, state = _client(resumer=resumer)
+    state.ledger.append(_commit(weight_kg=40.0))
+    state.inbox.open(
+        Decision(decision_id="dec-1", offer_id="off-1", rule="tight_window", prompt="?"),
+        interrupt_id="int-9", snapshot={}, rule_hits=[],
+    )
+    client.post("/api/inbox/dec-1/answer",
+                json={"outcome": "approve", "by": "Ama", "role": "coordinator", "note": ""})
+
+    impact = client.get("/api/impact").json()
+    assert impact["placements"] == 1                   # one offer, not two
+    assert impact["kg_rescued"] == 100.0               # 40 committed, then 60 more

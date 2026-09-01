@@ -119,3 +119,46 @@ def test_ranking_excludes_pantry_with_no_measured_distance():
         median_fresh_kg_30d=100.0,
     )
     assert [r.pantry_id for r in ranked] == ["reachable"]
+
+
+def _rank(pantries, lot, *, fill_ceiling=None):
+    ids = [p.pantry_id for p in pantries]
+    return rank_pantries(
+        pantries, lot,
+        etas={pid: NOW + timedelta(minutes=30) for pid in ids},
+        deadline=DEADLINE,
+        distances_km={pid: 4.0 for pid in ids},
+        median_fresh_kg_30d=100.0,
+        fill_ceiling=fill_ceiling,
+    )
+
+
+def test_equity_alone_recommends_a_placement_the_policy_would_stop():
+    """Without a ceiling, the least-fed pantry wins even when it has no room to spare.
+
+    This is the shape of a real defect: the ranking proposed a 120 kg placement into
+    a nearly full store because that site had received least, the escalation policy
+    then stopped it for capacity, and a human was woken for a placement that a second
+    pantry could have taken unattended.
+    """
+    starved_but_full = _pantry("starved", cold_capacity_kg=140.0, recent_fresh_kg_30d=10.0)
+    fed_but_roomy = _pantry("roomy", cold_capacity_kg=600.0, recent_fresh_kg_30d=100.0)
+    ranked = _rank([starved_but_full, fed_but_roomy], _lot(weight=120.0))
+    assert [r.pantry_id for r in ranked][0] == "starved"
+
+
+def test_a_pantry_over_the_fill_ceiling_ranks_below_one_that_is_not():
+    starved_but_full = _pantry("starved", cold_capacity_kg=140.0, recent_fresh_kg_30d=10.0)
+    fed_but_roomy = _pantry("roomy", cold_capacity_kg=600.0, recent_fresh_kg_30d=100.0)
+    ranked = _rank([starved_but_full, fed_but_roomy], _lot(weight=120.0), fill_ceiling=0.80)
+    assert [r.pantry_id for r in ranked][0] == "roomy"
+    over = next(r for r in ranked if r.pantry_id == "starved")
+    assert any("80% unattended fill limit" in reason for reason in over.reasons)
+
+
+def test_over_the_ceiling_is_a_demotion_not_an_exclusion():
+    """When nothing else can take the food, the coordinator still gets the choice."""
+    only_option = _pantry("only", cold_capacity_kg=140.0, recent_fresh_kg_30d=10.0)
+    ranked = _rank([only_option], _lot(weight=120.0), fill_ceiling=0.80)
+    assert [r.pantry_id for r in ranked] == ["only"]
+    assert ranked[0].is_viable

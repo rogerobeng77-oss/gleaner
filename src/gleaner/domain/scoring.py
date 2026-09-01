@@ -27,6 +27,12 @@ _MAX_DISTANCE_PENALTY = 25.0
 _DISTANCE_FULL_PENALTY_KM = 50.0
 _MAX_EQUITY_BONUS = 30.0
 _HEADROOM_BONUS = 15.0
+#: Demotion for a placement the current autonomy level would not commit unattended.
+#: Larger than every bonus this module can award combined, so a pantry that would
+#: breach the fill ceiling always ranks below one that would not - but it stays in
+#: the list, because when nothing else can take the food a coordinator still has to
+#: be offered the choice.
+_OVER_CEILING_PENALTY = 60.0
 
 
 @dataclass(frozen=True)
@@ -66,8 +72,16 @@ def score_pantry(
     deadline: datetime,
     distance_km: float,
     median_fresh_kg_30d: float,
+    fill_ceiling: float | None = None,
 ) -> ScoredPantry:
-    """Score one pantry as a destination for one lot."""
+    """Score one pantry as a destination for one lot.
+
+    ``fill_ceiling`` is the fraction of a store the current autonomy level will let
+    the agent fill unattended. Passing it keeps the ranking and the escalation policy
+    in agreement: without it the equity term will happily recommend the emptiest-fed
+    pantry even when that placement is one the policy is certain to stop, so the
+    agent proposes a placement it cannot make and a human is woken for nothing.
+    """
     blockers: list[str] = []
     reasons: list[str] = []
     margin = _margin_minutes(deadline, eta)
@@ -113,6 +127,12 @@ def score_pantry(
     score += _HEADROOM_BONUS * headroom
     reasons.append(f"would sit at {capacity_fraction:.0%} of {lot.temp_class} capacity")
 
+    if fill_ceiling is not None and capacity_fraction > fill_ceiling:
+        score -= _OVER_CEILING_PENALTY
+        reasons.append(
+            f"over the {fill_ceiling:.0%} unattended fill limit, so this one needs a human"
+        )
+
     return ScoredPantry(
         pantry.pantry_id, round(score, 2), reasons, blockers, margin, capacity_fraction
     )
@@ -126,6 +146,7 @@ def rank_pantries(
     deadline: datetime,
     distances_km: dict[str, float],
     median_fresh_kg_30d: float,
+    fill_ceiling: float | None = None,
 ) -> list[ScoredPantry]:
     """Viable pantries only, best first.
 
@@ -140,6 +161,7 @@ def rank_pantries(
             eta=etas[pantry.pantry_id], deadline=deadline,
             distance_km=distances_km[pantry.pantry_id],
             median_fresh_kg_30d=median_fresh_kg_30d,
+            fill_ceiling=fill_ceiling,
         )
         for pantry in pantries
         if pantry.pantry_id in etas and pantry.pantry_id in distances_km

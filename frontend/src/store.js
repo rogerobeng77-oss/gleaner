@@ -81,10 +81,16 @@ export const useStore = create((set, get) => ({
     try {
       const result = await api.submitOffer(offer);
       const held = result.status === "awaiting_decision";
+      // Three outcomes, not two. A run can finish having committed nothing —
+      // no pantry could take the food in time — and reporting that as "placed"
+      // is the one lie this console must never tell, because the counters
+      // right next to the toast say zero.
       get().notify(
         held
           ? `Offer held for you — ${result.rule || "policy stopped it"}`
-          : `Offer placed without interrupting you`,
+          : result.status === "placed"
+            ? "Offer placed without interrupting you"
+            : "Nowhere could take it in time — nothing was placed",
       );
       await get().refresh({ quiet: true });
       if (held) set({ route: "decisions" });

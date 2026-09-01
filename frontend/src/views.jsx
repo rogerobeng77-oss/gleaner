@@ -25,6 +25,56 @@ const when = (iso) => {
   return Number.isNaN(+d) ? "—" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 };
 
+/** Human labels for the tool arguments the audit hook records verbatim. */
+const DETAIL_LABELS = {
+  offer_id: "offer", pantry_id: "pantry", driver_id: "driver", donor_id: "donor",
+  decision_id: "decision", weight_kg: "weight", total_weight_kg: "weight",
+  committed_kg: "committed", temp_class: "handling", dietary_flags: "dietary flags",
+  minutes_out_of_refrigeration: "out of fridge", ready_at_iso: "ready at",
+  needs_refrigeration: "needs refrigeration", description: "food",
+  origin_lat: "from", dest_lat: "to", eta: "eta",
+};
+
+const isIso = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v);
+
+const detailValue = (key, v) => {
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "none";
+  if (typeof v === "boolean") return v ? "yes" : "no";
+  if (isIso(v)) return when(v);
+  if (typeof v === "number") {
+    if (key.endsWith("_kg")) return kg(v);
+    if (key.startsWith("minutes")) return `${v} min`;
+    return String(Math.round(v * 1000) / 1000);
+  }
+  return String(v);
+};
+
+/**
+ * Flatten one audit detail into label/value pairs a person can read.
+ *
+ * Latitude and longitude arrive as four separate keys and are meaningless on
+ * their own, so they collapse into one coordinate pair each; everything else
+ * keeps the agent's own argument names, relabelled.
+ */
+function detailRows(detail) {
+  const coord = (lat, lon) => `${Number(lat).toFixed(4)}, ${Number(lon).toFixed(4)}`;
+  const rows = [];
+  const seen = new Set();
+  for (const [a, b, label] of [["origin_lat", "origin_lon", "from"],
+                               ["dest_lat", "dest_lon", "to"],
+                               ["lat", "lon", "at"]]) {
+    if (a in detail && b in detail) {
+      rows.push([label, coord(detail[a], detail[b])]);
+      seen.add(a); seen.add(b);
+    }
+  }
+  for (const [k, v] of Object.entries(detail)) {
+    if (seen.has(k) || v === null || v === undefined || v === "") continue;
+    rows.push([DETAIL_LABELS[k] || k.replace(/_/g, " "), detailValue(k, v)]);
+  }
+  return rows;
+}
+
 export function Loading() {
   return (
     <div style={{ display: "grid", gap: 14 }}>
@@ -326,7 +376,11 @@ export function Timeline() {
               <div className="t">{when(e.at)} · {e.kind}</div>
               <div className="m"><b>{e.label}</b></div>
               {e.detail && Object.keys(e.detail).length > 0 && (
-                <div className="d">{JSON.stringify(e.detail)}</div>
+                <dl className="d">
+                  {detailRows(e.detail).map(([k, v]) => (
+                    <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
+                  ))}
+                </dl>
               )}
             </div>
           ))}

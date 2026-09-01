@@ -44,7 +44,7 @@ git clone <this repo> && cd gleaner
 
 python -m venv .venv && source .venv/bin/activate
 pip install -e .                     # required — the API will not start without it
-pytest -m "not integration"          # 306 offline tests, no network, no credentials
+pytest -m "not integration"          # 312 offline tests, no network, no credentials
 
 # terminal 1 — the control plane
 uvicorn gleaner.api.app:create_app --factory --port 8000
@@ -161,7 +161,7 @@ in dietary conflict. Two honest qualifications:
 ## Testing
 
 ```bash
-pytest -m "not integration"   # 306 tests, offline
+pytest -m "not integration"   # 312 tests, offline
 pytest -m integration         # 6 tests against live Bedrock — these are billed
 ```
 

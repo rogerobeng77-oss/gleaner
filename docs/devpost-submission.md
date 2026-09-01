@@ -42,7 +42,7 @@ When it stops, you get the rule that fired in plain English, not a rule code. "4
 
 Strands Agents on Amazon Bedrock, Claude Sonnet 4.6, deployed on App Runner.
 
-The design decision I'd defend hardest: **the maths is not the model's job**. Perishability, capacity, scoring and the escalation rules are all pure Python functions with no model anywhere near them. The agent orchestrates them. It never does the arithmetic itself. That's why I can test the safety-critical logic exhaustively, and why 306 of the tests run offline in under two seconds with no credentials.
+The design decision I'd defend hardest: **the maths is not the model's job**. Perishability, capacity, scoring and the escalation rules are all pure Python functions with no model anywhere near them. The agent orchestrates them. It never does the arithmetic itself. That's why I can test the safety-critical logic exhaustively, and why 312 of the tests run offline in under two seconds with no credentials.
 
 The autonomy boundary is a Strands `InterventionHandler` that runs before every consequential tool call. It returns `Proceed` or `Confirm`. A `Confirm` breaks the agent out of its loop, and the run's whole state gets snapshotted so a human can answer whenever they get to it. I found `interventions` and `interrupt` by reading the SDK rather than the docs, and they turned out to be a much closer fit for "runs in the background, surfaces only for real decisions" than anything I'd have built by hand.
 
@@ -105,6 +105,6 @@ python · fastapi · strands-agents · amazon-bedrock · claude · aws-app-runne
 ## Try it out
 
 - Live console: https://m6pane4ysw.us-west-2.awsapprunner.com
-- Source: (GitHub URL)
+- Source: https://github.com/rogerobeng77-oss/gleaner
 
 Click **Log an offer**. It's prefilled with 120kg of pork sausages. Watch it route around the one pantry that doesn't accept pork. Then change the weight to 400kg and watch it stop and ask you instead.
