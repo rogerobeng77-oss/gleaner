@@ -5,5 +5,5 @@ __pycache__/
 .venv/
 node_modules/
 dist/
-# keep diagram exports; ignore stray screenshots
-agents-for-humans/gleaner/*.png
+# stray screenshots at the project root; docs/diagrams/*.png is kept
+/*.png
