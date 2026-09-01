@@ -176,6 +176,52 @@ def test_the_threshold_decides_what_counts_as_novel():
     assert ctx.donor_is_novel is True
 
 
+def test_the_call_s_own_donor_id_is_used_when_the_offer_cannot_be_resolved():
+    """The fallback has to be reachable, or "unknown means novel" is decoration.
+
+    Before commit_placement carried a donor_id there was nothing to fall back TO, so
+    an unresolvable offer meant donor_is_novel was a constant True.
+    """
+    world = _world()
+    known = next(d for d in world.donors() if d.donation_count >= 1)
+    ctx = build_context_provider(world)(
+        "commit_placement",
+        _input(world, offer_id="off-never-seen", donor_id=known.donor_id),
+    )
+    assert ctx.donor_is_novel is False
+    assert "novel_donor" not in {h.rule for h in evaluate_rules(ctx, AutonomyLevel.CONSERVATIVE)}
+
+
+def test_an_unknown_donor_id_is_still_novel():
+    world = _world()
+    ctx = build_context_provider(world)(
+        "commit_placement", _input(world, offer_id="off-never-seen", donor_id="don-nobody")
+    )
+    assert ctx.donor_is_novel is True
+
+
+def test_a_donor_with_no_history_is_novel_even_though_the_world_knows_them():
+    world = _world()
+    fresh = next((d for d in world.donors() if d.donation_count == 0), None)
+    assert fresh is not None, "the default seed has no donor without history"
+    ctx = build_context_provider(world)(
+        "commit_placement", _input(world, offer_id="off-never-seen", donor_id=fresh.donor_id)
+    )
+    assert ctx.donor_is_novel is True
+
+
+def test_the_offer_record_outranks_the_call_s_donor_id():
+    """Naming a well-regarded donor over the top of a real offer must buy nothing."""
+    world = _world()
+    established = next(d for d in world.donors() if d.donation_count >= 1)
+    _register(world, "off-shady", donor_id="don-nobody")
+    ctx = build_context_provider(world)(
+        "commit_placement",
+        _input(world, offer_id="off-shady", donor_id=established.donor_id),
+    )
+    assert ctx.donor_is_novel is True
+
+
 # --- fail closed ------------------------------------------------------------------
 
 

@@ -163,6 +163,28 @@ def test_commit_placement_records_the_lot_facts_the_policy_needs():
     assert entry["ready_at_iso"] == "2026-09-01T12:15:00+00:00"
 
 
+def test_commit_placement_carries_the_donor_through_to_the_ledger():
+    """Without it the guard has no fallback when the offer cannot be resolved."""
+    tools, ledger, _ = _tools()
+    tools["commit_placement"](
+        offer_id="off-1", pantry_id="pan-1", driver_id="drv-1",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00", temp_class="chilled",
+        donor_id="don-3",
+    )
+    assert ledger[0]["donor_id"] == "don-3"
+
+
+def test_commit_placement_still_works_without_a_donor_id():
+    """Optional, so an agent that omits it fails the novelty check, not the call."""
+    tools, ledger, _ = _tools()
+    result = tools["commit_placement"](
+        offer_id="off-1", pantry_id="pan-1", driver_id="drv-1",
+        weight_kg=40.0, eta="2026-09-01T13:00:00+00:00", temp_class="chilled",
+    )
+    assert result["status"] == "committed"
+    assert ledger[0]["donor_id"] is None
+
+
 def test_commit_placement_rejects_an_unknown_temp_class():
     tools, ledger, _ = _tools()
     result = tools["commit_placement"](

@@ -193,6 +193,7 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
         dietary_flags: list[str] | None = None,
         minutes_out_of_refrigeration: float = 0.0,
         ready_at_iso: str | None = None,
+        donor_id: str | None = None,
     ) -> dict:
         """Irreversibly commit this donation to a pantry. Consequential: guarded by policy.
 
@@ -212,6 +213,13 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
             minutes_out_of_refrigeration: cold-chain budget already spent, in minutes.
             ready_at_iso: when the food becomes collectable, an ISO-8601 string WITH a
                 timezone offset. Omit to mean "available now".
+            donor_id: who is donating. Used only as a fallback: where the world can
+                resolve ``offer_id``, the offer record's donor is used instead and
+                this is ignored, so naming a well-regarded donor over the top of a
+                real offer buys nothing. It matters when the offer cannot be
+                resolved, which is the only case in which the policy has no other way
+                to look up the donor's history - and a donor it cannot look up is
+                treated as never having donated before.
         """
         if _pantry(pantry_id) is None:
             return {"error": f"unknown pantry {pantry_id}"}
@@ -226,6 +234,7 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
             "offer_id": offer_id,
             "pantry_id": pantry_id,
             "driver_id": driver_id,
+            "donor_id": donor_id,
             "weight_kg": weight_kg,
             "eta": eta,
             "temp_class": temp_class,
