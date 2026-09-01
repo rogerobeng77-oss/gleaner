@@ -89,3 +89,19 @@ def test_ranking_returns_viable_only_best_first():
 
 def test_scored_pantry_is_not_viable_when_blocked():
     assert not ScoredPantry("p", 10.0, [], ["closed on arrival"]).is_viable
+
+
+def test_ranking_excludes_pantry_with_no_measured_distance():
+    reachable = _pantry("reachable", recent_fresh_kg_30d=10.0)
+    unmeasured = _pantry("unmeasured", recent_fresh_kg_30d=10.0)
+    ranked = rank_pantries(
+        [reachable, unmeasured], _lot(),
+        etas={
+            "reachable": NOW + timedelta(minutes=30),
+            "unmeasured": NOW + timedelta(minutes=30),
+        },
+        deadline=DEADLINE,
+        distances_km={"reachable": 3.0},
+        median_fresh_kg_30d=100.0,
+    )
+    assert [r.pantry_id for r in ranked] == ["reachable"]

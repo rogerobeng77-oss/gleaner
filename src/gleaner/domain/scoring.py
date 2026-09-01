@@ -108,18 +108,19 @@ def rank_pantries(
     """Viable pantries only, best first.
 
     ``etas`` is per pantry: a nearby site must be judged on when the driver would
-    actually reach *it*, not on the longest trip in the set. A pantry with no entry is
-    treated as unreachable and excluded.
+    actually reach *it*, not on the longest trip in the set. A pantry missing from
+    either ``etas`` or ``distances_km`` is treated as unreachable/unmeasurable and
+    excluded.
     """
     scored = [
         score_pantry(
             pantry, lot,
             eta=etas[pantry.pantry_id], deadline=deadline,
-            distance_km=distances_km.get(pantry.pantry_id, 0.0),
+            distance_km=distances_km[pantry.pantry_id],
             median_fresh_kg_30d=median_fresh_kg_30d,
         )
         for pantry in pantries
-        if pantry.pantry_id in etas
+        if pantry.pantry_id in etas and pantry.pantry_id in distances_km
     ]
     return sorted(
         (candidate for candidate in scored if candidate.is_viable),
