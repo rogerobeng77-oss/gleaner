@@ -34,6 +34,7 @@ from gleaner.domain.types import AutonomyLevel
 from gleaner.hooks.audit import AuditTrail
 from gleaner.loops.place.context import build_context_provider
 from gleaner.loops.place.tools import build_place_tools
+from gleaner.policy.dependency import PlacementDependencyGuard
 from gleaner.policy.escalation import EscalationPolicy, rules_that_paused
 
 #: Overridable so a judge outside us-east-1, or on a different model, can still run
@@ -47,6 +48,12 @@ Your job is to get surplus food to a pantry before it spoils. Work in this order
 1. Use find_pantries to see which pantries can actually take the food.
 2. Use find_driver and estimate_arrival to check someone can get it there in time.
 3. Call commit_placement for the best option, then dispatch_driver.
+
+Order matters and is enforced, not suggested. dispatch_driver, notify_pantry and
+notify_donor all act on a placement, so all three are refused until commit_placement
+for that offer has actually gone through, and all three take the offer_id so they can
+be checked against it. If a commit is held for a human it has not gone through: stop
+there rather than dispatching a driver or telling anyone the food is on its way.
 
 When you call commit_placement, pass the food's temp_class, dietary_flags,
 minutes_out_of_refrigeration and ready_at_iso along with the placement, and the
@@ -114,11 +121,18 @@ def build_place_agent(
     policy: EscalationPolicy,
     trail: AuditTrail,
 ) -> Agent:
-    """Construct a PLACE agent wired to a world, a policy and an audit trail."""
+    """Construct a PLACE agent wired to a world, a policy and an audit trail.
+
+    Two interventions, in this order. ``PlacementDependencyGuard`` goes first because
+    its ``Deny`` short-circuits the pipeline: a dispatch for a placement that was
+    never committed is refused outright and never reaches ``policy``, which would
+    otherwise judge it on its own merits, find nothing wrong with it, and let a
+    volunteer be sent for food that has nowhere to go.
+    """
     return Agent(
         model=BedrockModel(model_id=REASONING_MODEL, region_name=REGION),
         tools=build_place_tools(world, ledger),
-        interventions=[policy],
+        interventions=[PlacementDependencyGuard(ledger, trail), policy],
         hooks=[trail],
         system_prompt=SYSTEM_PROMPT,
         checkpointing=False,

@@ -228,6 +228,13 @@ def build_context_provider(
     - if a future notification could commit the pantry to something, this is where
     that gets described.
 
+    What this module does *not* judge for either notification is whether the placement
+    it talks about happened at all. That is a question about the run's history rather
+    than about the call's risk, the ledger answers it, and
+    ``policy.dependency.PlacementDependencyGuard`` asks it before anything reaches
+    here. Do not duplicate it in a context: a rule set that reported "no viable match"
+    for a message about an unapproved placement would be saying something false.
+
     **``notify_donor``** is the same, except for one dimension that is real: the first
     message Gleaner ever sends to a business it has no relationship with is a
     reputational act in somebody else's name. ``donor_is_novel`` is read from the

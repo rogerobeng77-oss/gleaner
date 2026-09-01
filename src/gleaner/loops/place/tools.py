@@ -262,22 +262,38 @@ def build_place_tools(world: WorldAdapter, ledger: list[dict[str, Any]]) -> list
         return {"status": "dispatched", **entry}
 
     @tool
-    def notify_pantry(pantry_id: str, message: str) -> dict:
-        """Send a message to a pantry. Consequential: guarded by policy."""
+    def notify_pantry(pantry_id: str, message: str, offer_id: str | None = None) -> dict:
+        """Tell a pantry about a placement. Consequential: guarded by policy.
+
+        Args:
+            pantry_id: the pantry to message.
+            message: what to tell them.
+            offer_id: the placement this message is about. A message that names no
+                committed placement is refused before it is sent - a pantry told to
+                expect food that was never approved clears shelf space for nothing.
+        """
         if _pantry(pantry_id) is None:
             return {"error": f"unknown pantry {pantry_id}"}
         entry = {"kind": "notify_pantry", "pantry_id": pantry_id, "message": message,
-                 "at": world.now().isoformat()}
+                 "offer_id": offer_id, "at": world.now().isoformat()}
         ledger.append(entry)
         return {"status": "sent", **entry}
 
     @tool
-    def notify_donor(donor_id: str, message: str) -> dict:
-        """Send a message to a donor. Consequential: guarded by policy."""
+    def notify_donor(donor_id: str, message: str, offer_id: str | None = None) -> dict:
+        """Tell a donor about a placement. Consequential: guarded by policy.
+
+        Args:
+            donor_id: the donor to message.
+            message: what to tell them.
+            offer_id: the placement this message is about. A message that names no
+                committed placement is refused before it is sent - a donor told their
+                donation is collected stops looking for another taker.
+        """
         if _donor(donor_id) is None:
             return {"error": f"unknown donor {donor_id}"}
         entry = {"kind": "notify_donor", "donor_id": donor_id, "message": message,
-                 "at": world.now().isoformat()}
+                 "offer_id": offer_id, "at": world.now().isoformat()}
         ledger.append(entry)
         return {"status": "sent", **entry}
 
