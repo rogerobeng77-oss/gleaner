@@ -1,0 +1,50 @@
+flowchart TB
+
+  COORD(["<b>Coordinator</b><br/>logs a donation offer"])
+  CONSOLE["<b>Gleaner Console</b><br/>React 18 · Vite"]
+  API["<b>FastAPI control plane</b><br/>AWS App Runner"]
+
+  subgraph LOOP[" PLACE loop "]
+    direction LR
+    I["Intake"] --> S["Safety"] --> M["Match"] --> R["Route"] --> C["Commit"]
+  end
+
+  BR["<b>Amazon Bedrock</b><br/>Claude Sonnet 4.6"]
+  TRAIL[("<b>Audit trail</b><br/>every model and tool call")]
+
+  DEP["<b>Dependency guard</b><br/>is there a committed placement<br/>for this offer?"]
+  POL["<b>Escalation policy</b><br/>may the agent do this alone,<br/>at the level you set?"]
+
+  FACTS["<b>Checked against the world</b><br/>the offer record, not the agent's word<br/>· perishability · capacity · equity ·"]
+
+  REFUSED["<b>Refused</b><br/>nothing happens,<br/>and the trail says why"]
+  LEDGER[("<b>Placed</b><br/>ledger · impact · meals")]
+  INBOX[("<b>Held for a human</b><br/>the rule that fired, in plain English<br/>answered, the run resumes where it paused")]
+
+  COORD --> CONSOLE
+  CONSOLE --> API
+  API --> LOOP
+  LOOP -.-> BR
+  LOOP -.-> TRAIL
+  LOOP --> DEP
+  DEP -- "yes" --> POL
+  DEP -- "no" --> REFUSED
+  POL -.- FACTS
+  POL == "within limits" ==> LEDGER
+  POL == "needs a person" ==> INBOX
+
+  classDef store fill:#FFF6F1,stroke:#FFD6C2,color:#201515
+  classDef good fill:#E6F4EE,stroke:#0E7A54,color:#201515
+  classDef guard fill:#FBEAE7,stroke:#B62A1B,color:#201515,stroke-width:1.5px
+  classDef ext fill:#F3F1FE,stroke:#6B4EFF,color:#201515
+  classDef ui fill:#FFFFFF,stroke:#E8E2DC,color:#201515
+  classDef facts fill:#FFFDF9,stroke:#C9C1B8,color:#5C5551
+
+  class TRAIL store
+  class LEDGER good
+  class INBOX guard
+  class REFUSED facts
+  class DEP,POL guard
+  class BR,COORD ext
+  class CONSOLE,API ui
+  class FACTS facts

@@ -86,6 +86,14 @@ and a single origin.
 
 ---
 
+## Architecture
+
+![Gleaner architecture](docs/diagrams/gleaner-architecture.png)
+
+Editable source: [`docs/diagrams/gleaner-architecture.drawio`](docs/diagrams/gleaner-architecture.drawio)
+(open at [diagrams.net](https://app.diagrams.net)) and
+[`gleaner-architecture.mmd`](docs/diagrams/gleaner-architecture.mmd) for the mermaid version.
+
 ## How it works
 
 ```

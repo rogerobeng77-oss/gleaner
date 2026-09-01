@@ -1,0 +1,147 @@
+<mxfile host="app.diagrams.net" agent="Gleaner" type="device">
+  <diagram name="Gleaner architecture" id="gleaner-arch-1">
+    <mxGraphModel dx="1422" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="1654" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============================ title ============================ -->
+        <mxCell id="title" value="&lt;b&gt;Gleaner&lt;/b&gt; — an autonomous food-rescue coordinator" style="text;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="330" y="10" width="500" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="The agent places what it can. It stops when the call is genuinely a person's." style="text;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=13;fontColor=#5C5551;" vertex="1" parent="1">
+          <mxGeometry x="330" y="38" width="500" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ============================ spine ============================ -->
+        <mxCell id="coord" value="&lt;b&gt;Coordinator&lt;/b&gt;&lt;br&gt;logs a donation offer" style="rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor=#F3F1FE;strokeColor=#6B4EFF;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="450" y="80" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="console" value="&lt;b&gt;Gleaner Console&lt;/b&gt;&lt;br&gt;React 18 · Vite" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8E2DC;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="450" y="185" width="240" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api" value="&lt;b&gt;FastAPI control plane&lt;/b&gt;&lt;br&gt;serves the console and /api&lt;br&gt;&lt;font color=&quot;#5C5551&quot;&gt;AWS App Runner&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8E2DC;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="450" y="295" width="240" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- ============================ PLACE loop ============================ -->
+        <mxCell id="loop" value="PLACE loop · Strands Agents graph" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#E8E2DC;dashed=0;verticalAlign=top;fontFamily=Helvetica;fontSize=12;fontColor=#5C5551;align=center;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="1090" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="n_intake" value="Intake" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8E2DC;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="70" y="462" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="n_safety" value="Safety" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8E2DC;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="280" y="462" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="n_match" value="Match" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8E2DC;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="490" y="462" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="n_route" value="Route" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8E2DC;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="700" y="462" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="n_commit" value="Commit" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8E2DC;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="910" y="462" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ============================ side leaves ============================ -->
+        <mxCell id="bedrock" value="&lt;b&gt;Amazon Bedrock&lt;/b&gt;&lt;br&gt;Claude Sonnet 4.6&lt;br&gt;&lt;font color=&quot;#5C5551&quot;&gt;us-east-1&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F3F1FE;strokeColor=#6B4EFF;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="70" y="620" width="220" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="trail" value="&lt;b&gt;Audit trail&lt;/b&gt;&lt;br&gt;every model call,&lt;br&gt;tool call and pause" style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=12;whiteSpace=wrap;html=1;fillColor=#FFF6F1;strokeColor=#FFD6C2;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="340" y="612" width="220" height="95" as="geometry" />
+        </mxCell>
+
+        <!-- ============================ guards ============================ -->
+        <mxCell id="dep" value="&lt;b&gt;Dependency guard&lt;/b&gt;&lt;br&gt;is there a committed placement&lt;br&gt;for this offer?" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FBEAE7;strokeColor=#B62A1B;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="640" y="610" width="300" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pol" value="&lt;b&gt;Escalation policy&lt;/b&gt;&lt;br&gt;may the agent do this alone,&lt;br&gt;at the level you set?" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FBEAE7;strokeColor=#B62A1B;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="470" y="790" width="300" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="facts" value="&lt;b&gt;Checked against the world&lt;/b&gt;&lt;br&gt;the offer record, not the agent's word&lt;br&gt;· perishability · capacity · equity ·&lt;br&gt;&lt;i&gt;unknown is never permissive&lt;/i&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFDF9;strokeColor=#C9C1B8;dashed=1;fontFamily=Helvetica;fontSize=12;fontColor=#5C5551;" vertex="1" parent="1">
+          <mxGeometry x="110" y="800" width="280" height="95" as="geometry" />
+        </mxCell>
+
+        <!-- ============================ outcomes ============================ -->
+        <mxCell id="refused" value="&lt;b&gt;Refused&lt;/b&gt;&lt;br&gt;nothing happens, and&lt;br&gt;the trail says why" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFDF9;strokeColor=#C9C1B8;fontFamily=Helvetica;fontSize=13;fontColor=#5C5551;" vertex="1" parent="1">
+          <mxGeometry x="850" y="800" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ledger" value="&lt;b&gt;Placed&lt;/b&gt;&lt;br&gt;ledger · impact · meals" style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=12;whiteSpace=wrap;html=1;fillColor=#E6F4EE;strokeColor=#0E7A54;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="470" y="980" width="240" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="inbox" value="&lt;b&gt;Held for a human&lt;/b&gt;&lt;br&gt;the rule that fired, in plain English&lt;br&gt;answered, the run resumes&lt;br&gt;exactly where it paused" style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=12;whiteSpace=wrap;html=1;fillColor=#FBEAE7;strokeColor=#B62A1B;strokeWidth=1.5;fontFamily=Helvetica;fontSize=13;fontColor=#201515;" vertex="1" parent="1">
+          <mxGeometry x="810" y="960" width="290" height="125" as="geometry" />
+        </mxCell>
+
+        <!-- ============================ note ============================ -->
+        <mxCell id="note" value="&lt;b&gt;Two rules ignore the autonomy dial.&lt;/b&gt;&lt;br&gt;liability_uncertain and dietary_conflict fire at every&lt;br&gt;level and cannot be loosened. Food safety and dietary&lt;br&gt;consent are not preferences — an eval suite asserts it." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8E2DC;align=left;spacingLeft=10;fontFamily=Helvetica;fontSize=12;fontColor=#5C5551;" vertex="1" parent="1">
+          <mxGeometry x="90" y="980" width="330" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ============================ edges ============================ -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="coord" target="console">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="POST /api/offers" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;fontFamily=Helvetica;fontSize=11;fontColor=#5C5551;" edge="1" parent="1" source="console" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="api" target="loop">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="n_intake" target="n_safety">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="n_safety" target="n_match">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="n_match" target="n_route">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="n_route" target="n_commit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e8" value="reasoning" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#8C8380;endArrow=blockThin;endFill=1;fontFamily=Helvetica;fontSize=11;fontColor=#5C5551;" edge="1" parent="1" source="n_intake" target="bedrock">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="records itself" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#8C8380;endArrow=blockThin;endFill=1;fontFamily=Helvetica;fontSize=11;fontColor=#5C5551;" edge="1" parent="1" source="n_match" target="trail">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="every consequential call" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;fontFamily=Helvetica;fontSize=11;fontColor=#5C5551;" edge="1" parent="1" source="n_commit" target="dep">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e11" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;fontFamily=Helvetica;fontSize=12;fontColor=#201515;" edge="1" parent="1" source="dep" target="pol">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7C736E;endArrow=blockThin;endFill=1;fontFamily=Helvetica;fontSize=12;fontColor=#201515;" edge="1" parent="1" source="dep" target="refused">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#8C8380;endArrow=none;" edge="1" parent="1" source="pol" target="facts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="within limits" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#0E7A54;strokeWidth=2;endArrow=blockThin;endFill=1;fontFamily=Helvetica;fontSize=12;fontColor=#0E7A54;" edge="1" parent="1" source="pol" target="ledger">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" value="needs a person" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B62A1B;strokeWidth=2;endArrow=blockThin;endFill=1;fontFamily=Helvetica;fontSize=12;fontColor=#B62A1B;exitX=0.85;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;verticalAlign=bottom;" edge="1" parent="1" source="pol" target="inbox">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="725" y="925" />
+              <mxPoint x="955" y="925" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
