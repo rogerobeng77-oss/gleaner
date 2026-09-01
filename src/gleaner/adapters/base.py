@@ -1,8 +1,10 @@
 # src/gleaner/adapters/base.py
 """The seam between Gleaner and the world.
 
-Three implementations sit behind this: a deterministic simulation, real public
-geodata, and live integrations. The agent graph never knows which one it is talking to.
+One implementation exists today: ``SimulatedCity``, a deterministic Pittsburgh. The
+protocol is narrow on purpose so that the two the design calls for - one backed by
+real public geodata, one by live integrations with donors, pantries and drivers -
+can be written later without the agent graph noticing which it is talking to.
 """
 
 from __future__ import annotations

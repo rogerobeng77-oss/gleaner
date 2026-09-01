@@ -23,7 +23,17 @@ class PendingDecision:
 
 
 class DecisionInbox:
-    """In-memory inbox. Task 12 swaps the storage without changing this interface."""
+    """An in-memory inbox. Escalations live only as long as the process does.
+
+    That is a real limitation and worth stating plainly, because it is in tension
+    with what this class is for: parking a paused run so a human can answer it
+    later. "Later" currently means later in the same process. Restart the API and
+    every pending decision, and the snapshot needed to resume its run, is gone.
+
+    The interface is deliberately narrow - open, pending, get, answer - so a durable
+    implementation can be dropped in behind it without touching a caller. None
+    exists yet.
+    """
 
     def __init__(self) -> None:
         self._pending: dict[str, PendingDecision] = {}

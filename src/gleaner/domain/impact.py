@@ -2,7 +2,8 @@
 
 Two numbers matter to a coordinator: how many meals this became, and what would have
 happened without the agent. Both are computed from published conversion factors rather
-than invented, and every figure in the UI can be traced back to this module.
+than invented, and this module is the only place either figure is produced - so any
+number a caller reports traces back to a source cited below.
 
 Sources:
   * 1.2 lb (0.544 kg) of food per meal - Feeding America's standard conversion, also
