@@ -49,7 +49,12 @@ def test_answering_a_decision_records_the_human():
         json={"outcome": "approve", "by": "Ama", "role": "coordinator", "note": "phoned"},
     )
     assert response.status_code == 200
-    assert response.json()["outcome"] == "approve"
+    body = response.json()
+    assert body["outcome"] == "approve"
+    assert body["by"] == "Ama"
+    assert body["role"] == "coordinator"
+    assert body["note"] == "phoned"
+    assert body["at"] is not None
     assert client.get("/api/inbox").json() == []
 
 
@@ -60,12 +65,15 @@ def test_answering_an_unknown_decision_is_404():
         json={"outcome": "approve", "by": "a", "role": "b", "note": ""},
     )
     assert response.status_code == 404
+    assert "nope" in response.json()["detail"]
 
 
 def test_autonomy_can_be_read_and_changed():
     client, _ = _client()
     assert client.get("/api/autonomy").json()["level"] == "balanced"
-    assert client.put("/api/autonomy", json={"level": "trusted"}).status_code == 200
+    put_response = client.put("/api/autonomy", json={"level": "trusted"})
+    assert put_response.status_code == 200
+    assert put_response.json()["level"] == "trusted"
     assert client.get("/api/autonomy").json()["level"] == "trusted"
 
 
