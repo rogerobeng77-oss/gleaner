@@ -1,5 +1,5 @@
 # src/gleaner/loops/place/context.py
-"""Deriving the placement context the escalation policy judges.
+"""Describing a guarded tool call to the escalation policy.
 
 The policy asks one question - may the agent do this alone? - and it can only
 answer honestly if the facts it is given are facts. The obvious mistake, and the
@@ -10,16 +10,28 @@ guard theatre.
 So almost nothing here is taken on trust. The pantry is looked up in the world and
 its real free capacity and real dietary restrictions are used. The deadline is
 recomputed from the cold-chain arithmetic in ``perishability``. The donor's history
-is read from the world, not from the tool call. What is unavoidably the model's
-assertion - the mass, the temperature class, the promised ETA - is exactly the set
-of claims the tool would act on anyway, and every one of them is used to *tighten*
-the judgement, never to relax it.
+is read from the world - from the offer record where one exists, and only otherwise
+from the tool call. What is unavoidably the model's assertion - the mass, the
+temperature class, the promised ETA - is exactly the set of claims the tool would
+act on anyway, and every one of them is used to *tighten* the judgement, never to
+relax it.
+
+**Not every guarded tool is a placement.** ``PlacementContext`` and every rule in
+``rules.py`` describe placing food: a mass, a cold chain, a pantry's shelves, a
+dietary consent. Four of the five guarded tools do not place anything. Judging a
+driver dispatch with the placement arithmetic does not merely mis-answer - it puts
+sentences in front of the coordinator that are false about the action they are being
+asked to approve, and a guard that lies to the human it escalates to has stopped
+being a guard. So the provider is tool-aware: it describes each tool in terms of the
+dimensions that are genuinely real for it, leaves the rest silent, and returns
+``None`` for a tool it cannot describe at all rather than inventing a description.
 
 **Fail closed.** Any input this module cannot make sense of - an unknown pantry, a
-naive datetime, a missing temperature class, a non-positive weight - produces a
-context that escalates. Silence is never read as consent. The rules that fire in
-that case (``liability_uncertain`` and ``no_viable_match``) are unconditional, so an
-unparseable call escalates at every autonomy level including ``trusted``.
+naive datetime, a missing temperature class, a non-positive weight, an unresolvable
+offer, an unrecognised tool - escalates. Silence is never read as consent, and
+"silent rule" never means "safe action": the dimensions a tool leaves neutral are
+the ones that are *not about* that tool, never the ones that are risky but
+unchecked.
 """
 
 from __future__ import annotations
@@ -41,14 +53,57 @@ from gleaner.policy.rules import PlacementContext
 MAX_SAFETY_CONFIDENCE: float = 0.99
 
 
+#: What ``build_context_provider`` returns.
+#:
+#: ``(tool_name, tool_input) -> PlacementContext | None``. ``None`` is not an error
+#: and not permission: it means the placement rule set has nothing true to say about
+#: this tool, and the policy must escalate on its own account rather than report a
+#: rule that does not apply.
+ContextProvider = Callable[[str, dict[str, Any]], PlacementContext | None]
+
+
+def _neutral(**overrides: Any) -> PlacementContext:
+    """A context in which no rule in ``rules.py`` fires, at any autonomy level.
+
+    The starting point for a guarded tool that is not a placement. Every field is set
+    to the value that keeps its rule silent, and the caller switches back on only the
+    dimensions that are genuinely real for the tool in hand.
+
+    Silence here says "this rule is not about this action" - which is emphatically not
+    "this action is safe". A caller facing a real risk it cannot assess must not reach
+    for this function; it must return ``None`` and let the policy escalate.
+
+    ``margin_minutes`` is infinite rather than merely large: an action with no arrival
+    to be late for has no deadline, and a finite stand-in would quietly become wrong
+    the day somebody raised ``required_margin_minutes``.
+    """
+    base = dict(
+        weight_kg=0.0,
+        margin_minutes=float("inf"),
+        safety_confidence=1.0,
+        capacity_fraction=0.0,
+        liability_ok=True,
+        dietary_ok=True,
+        donor_is_novel=False,
+        has_viable_match=True,
+    )
+    return PlacementContext(**{**base, **overrides})
+
+
 def _escalating(weight_kg: float = 0.0) -> PlacementContext:
-    """The context returned when the input cannot be trusted or understood.
+    """The context for a **placement** whose input cannot be trusted or understood.
 
     ``liability_ok=False`` and ``has_viable_match=False`` both fire rules that carry
     no threshold, so this escalates at every autonomy level. ``dietary_ok`` is left
     ``True`` deliberately: we do not know of a dietary conflict here, and claiming
     one would put a false sentence in front of the coordinator. The escalation is
     already guaranteed without it.
+
+    Both sentences it does produce are true of an unintelligible placement: nothing
+    establishes Emerson Act protection for food we cannot identify, and no pantry can
+    be shown to take a lot we cannot describe. Do not reuse this for a tool that
+    places nothing - ``no_viable_match`` in particular says something specific about
+    pantries that is simply not true of, say, a driver dispatch.
     """
     return PlacementContext(
         weight_kg=weight_kg,
@@ -94,12 +149,13 @@ def _safety_confidence(temp_class: TempClass, minutes_out: float) -> float:
 
 def build_context_provider(
     world: WorldAdapter, *, donor_is_novel_threshold: int = 1
-) -> Callable[[dict[str, Any]], PlacementContext]:
-    """A context provider bound to a world, for ``EscalationPolicy``.
+) -> ContextProvider:
+    """A tool-aware context provider bound to a world, for ``EscalationPolicy``.
 
-    The returned callable takes the guarded tool call's ``input`` dict - the
-    arguments the model actually proposed - and answers with a ``PlacementContext``
-    derived from the world wherever the world can answer.
+    The returned callable takes the guarded tool's name and the arguments the model
+    actually proposed, and answers with a ``PlacementContext`` derived from the world
+    wherever the world can answer - or ``None`` when the placement rule set has
+    nothing true to say about that tool.
 
     Args:
         world: the adapter every lookup goes through.
@@ -107,10 +163,11 @@ def build_context_provider(
             treated as novel. The default of 1 means "has never donated before".
 
     Returns:
-        ``(tool_input) -> PlacementContext``. Never raises: an input it cannot make
-        sense of comes back as an escalating context.
+        ``(tool_name, tool_input) -> PlacementContext | None``. Never raises: an input
+        it cannot make sense of comes back as an escalating context, and a tool it
+        does not recognise comes back as ``None``.
 
-    Notes on each field:
+    **``commit_placement``** gets the full derivation. Field by field:
 
     * ``weight_kg`` and ``temp_class`` are the model's assertions, and irreducibly so:
       a placement may legitimately be part of an offer, of one handling class, so
@@ -133,11 +190,50 @@ def build_context_provider(
       Safety node that has not been built. Until it exists, treat a ``True`` here as
       "no arithmetic reason to doubt it", never as "protection established".
     * ``safety_confidence`` follows ``_safety_confidence`` above.
-    * ``donor_is_novel`` is read from the world when the donation offer can be
-      resolved to a donor. When it cannot, it is ``True`` - unknown escalates.
+    * ``donor_is_novel`` comes from the offer record's donor where the offer resolves,
+      and only otherwise from the call's own ``donor_id``. Unknown is novel.
     * ``has_viable_match`` is ``True`` only when the pantry exists and can physically
       take the whole lot right now.
+
+    **``dispatch_driver``** sends a person to collect a donation. It moves no food
+    onto a shelf, so capacity, dietary consent, mass, arrival margin and the
+    placement's remaining cold-chain confidence are all silent - not waived, simply
+    not about this action. Two dimensions are real and both are read from the world:
+
+    * ``liability_ok`` - whether the donation being collected has already blown its
+      cold-chain budget. Sending a volunteer across Pittsburgh for food that is
+      already bin-fodder is exactly the call a coordinator wants to intercept.
+    * ``donor_is_novel`` - a real person is being sent to a business address we have
+      never dealt with.
+
+    An ``offer_id`` the world cannot resolve escalates: nothing establishes protection
+    for a donation we cannot identify, and we cannot name its donor either. Both
+    sentences the coordinator then reads are true. The driver's own existence is not
+    re-checked here because ``dispatch_driver`` itself refuses an unknown driver and
+    writes nothing to the ledger.
+
+    **``notify_pantry``** sends a message to a partner already in our network, decides
+    nothing about food, and is reversible by sending another. The tool refuses an
+    unknown ``pantry_id`` outright. No rule in ``rules.py`` is true of it, so it gets
+    a fully neutral context and proceeds at every level. It stays in ``GUARDED_TOOLS``
+    because it reaches the outside world and must therefore keep passing through here
+    - if a future notification could commit the pantry to something, this is where
+    that gets described.
+
+    **``notify_donor``** is the same, except for one dimension that is real: the first
+    message Gleaner ever sends to a business it has no relationship with is a
+    reputational act in somebody else's name. ``donor_is_novel`` is read from the
+    world for the ``donor_id`` given; everything else is neutral. At ``trusted``,
+    where novel donors are allowed, a routine notification proceeds.
+
+    **Anything else**, including ``send_outreach``, returns ``None``. ``send_outreach``
+    is guarded by name but belongs to the SOURCE loop and does not exist yet; a tool
+    this module has never been taught to describe is precisely a tool whose risk it
+    cannot assess, and the honest response is to say so rather than to borrow a
+    placement's vocabulary. ``EscalationPolicy`` turns ``None`` into an escalation
+    that states exactly that.
     """
+
     def _offer(tool_input: dict[str, Any]) -> DonationOffer | None:
         """The donation offer behind this call, if the world can resolve it."""
         return world.offer(tool_input.get("offer_id"))
@@ -147,9 +243,8 @@ def build_context_provider(
             return None
         return next((p for p in world.pantries() if p.pantry_id == pantry_id), None)
 
-    def _donor_is_novel(tool_input: dict[str, Any], offer: DonationOffer | None) -> bool:
+    def _donor_is_novel(donor_id: Any) -> bool:
         """Novel unless the world can positively say otherwise."""
-        donor_id = offer.donor_id if offer is not None else tool_input.get("donor_id")
         if not isinstance(donor_id, str):
             return True
         donor = next((d for d in world.donors() if d.donor_id == donor_id), None)
@@ -157,10 +252,9 @@ def build_context_provider(
             return True
         return donor.donation_count < donor_is_novel_threshold
 
-    def provide(tool_input: dict[str, Any]) -> PlacementContext:
-        if not isinstance(tool_input, dict):
-            return _escalating()
+    # -- commit_placement ----------------------------------------------------
 
+    def _commit_context(tool_input: dict[str, Any]) -> PlacementContext:
         raw_weight = tool_input.get("weight_kg")
         weight_kg = float(raw_weight) if isinstance(raw_weight, (int, float)) else 0.0
         if weight_kg <= 0:
@@ -215,8 +309,45 @@ def build_context_provider(
             capacity_fraction=utilisation_after(pantry, lot),
             liability_ok=not perishability.is_already_unsafe(temp_class, minutes_out),
             dietary_ok=not (set(flags) & set(pantry.dietary_restrictions)),
-            donor_is_novel=_donor_is_novel(tool_input, offer),
+            donor_is_novel=_donor_is_novel(
+                offer.donor_id if offer is not None else tool_input.get("donor_id")
+            ),
             has_viable_match=can_accept(pantry, lot),
         )
+
+    # -- the tools that move no food ------------------------------------------
+
+    def _dispatch_context(tool_input: dict[str, Any]) -> PlacementContext:
+        offer = _offer(tool_input)
+        if offer is None:
+            return _neutral(liability_ok=False, donor_is_novel=True)
+        return _neutral(
+            liability_ok=not any(
+                perishability.is_already_unsafe(
+                    lot.temp_class, offer.minutes_out_of_refrigeration
+                )
+                for lot in offer.lots
+            ),
+            donor_is_novel=_donor_is_novel(offer.donor_id),
+        )
+
+    def _notify_pantry_context(_tool_input: dict[str, Any]) -> PlacementContext:
+        return _neutral()
+
+    def _notify_donor_context(tool_input: dict[str, Any]) -> PlacementContext:
+        return _neutral(donor_is_novel=_donor_is_novel(tool_input.get("donor_id")))
+
+    describers: dict[str, Callable[[dict[str, Any]], PlacementContext]] = {
+        "commit_placement": _commit_context,
+        "dispatch_driver": _dispatch_context,
+        "notify_pantry": _notify_pantry_context,
+        "notify_donor": _notify_donor_context,
+    }
+
+    def provide(tool_name: str, tool_input: dict[str, Any]) -> PlacementContext | None:
+        describer = describers.get(tool_name)
+        if describer is None:
+            return None
+        return describer(tool_input if isinstance(tool_input, dict) else {})
 
     return provide

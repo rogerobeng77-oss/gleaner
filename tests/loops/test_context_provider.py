@@ -64,6 +64,7 @@ def test_a_modest_claimed_weight_cannot_hide_a_capacity_overrun():
     no_freezer = [p for p in world.pantries() if p.frozen_capacity_kg == 0.0]
     assert no_freezer, "the default seed has no pantry without a freezer"
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(world, pantry_id=no_freezer[0].pantry_id, temp_class="frozen", weight_kg=10.0)
     )
     assert ctx.weight_kg == 10.0            # the claim is carried through untouched
@@ -77,6 +78,7 @@ def test_capacity_fraction_comes_from_the_pantry_not_the_claim():
     pantry = next(p for p in world.pantries() if not p.dietary_restrictions)
     half_the_headroom = pantry.free_kg("chilled") / 2
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(world, pantry_id=pantry.pantry_id, weight_kg=half_the_headroom)
     )
     expected = (pantry.cold_used_kg + half_the_headroom) / pantry.cold_capacity_kg
@@ -87,6 +89,7 @@ def test_capacity_fraction_comes_from_the_pantry_not_the_claim():
 def test_pork_against_a_pork_restricted_pantry_is_a_dietary_conflict():
     world = _world()
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(world, pantry_id=_pantry_with_restriction(world, "pork"), dietary_flags=["pork"])
     )
     assert ctx.dietary_ok is False
@@ -95,13 +98,14 @@ def test_pork_against_a_pork_restricted_pantry_is_a_dietary_conflict():
 
 def test_the_same_food_at_an_unrestricted_pantry_is_fine():
     world = _world()
-    ctx = build_context_provider(world)(_input(world, dietary_flags=["pork"]))
+    ctx = build_context_provider(world)("commit_placement", _input(world, dietary_flags=["pork"]))
     assert ctx.dietary_ok is True
 
 
 def test_food_past_its_cold_chain_budget_is_not_liability_ok():
     world = _world()
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(world, minutes_out_of_refrigeration=400.0)   # chilled budget is 240
     )
     assert ctx.liability_ok is False
@@ -112,8 +116,8 @@ def test_food_past_its_cold_chain_budget_is_not_liability_ok():
 def test_safety_confidence_decays_with_the_spent_cold_chain_budget():
     world = _world()
     provide = build_context_provider(world)
-    fresh = provide(_input(world, minutes_out_of_refrigeration=0.0))
-    half_spent = provide(_input(world, minutes_out_of_refrigeration=120.0))
+    fresh = provide("commit_placement", _input(world, minutes_out_of_refrigeration=0.0))
+    half_spent = provide("commit_placement", _input(world, minutes_out_of_refrigeration=120.0))
     assert fresh.safety_confidence == 0.99          # the ceiling, never certainty
     assert half_spent.safety_confidence == 0.49     # half the 240-minute budget spent
     assert fresh.safety_confidence > half_spent.safety_confidence
@@ -122,6 +126,7 @@ def test_safety_confidence_decays_with_the_spent_cold_chain_budget():
 def test_margin_is_measured_against_the_recomputed_deadline():
     world = _world()
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(
             world,
             minutes_out_of_refrigeration=180.0,          # 60 minutes of budget left
@@ -134,6 +139,7 @@ def test_margin_is_measured_against_the_recomputed_deadline():
 def test_an_eta_past_the_deadline_yields_a_negative_margin():
     world = _world()
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(
             world,
             minutes_out_of_refrigeration=180.0,
@@ -149,7 +155,7 @@ def test_an_eta_past_the_deadline_yields_a_negative_margin():
 
 def test_a_donor_that_cannot_be_resolved_is_treated_as_novel():
     world = _world()
-    ctx = build_context_provider(world)(_input(world, offer_id="off-never-seen"))
+    ctx = build_context_provider(world)("commit_placement", _input(world, offer_id="off-never-seen"))
     assert ctx.donor_is_novel is True
 
 
@@ -157,7 +163,7 @@ def test_a_known_offer_resolves_to_the_real_donor_history():
     world = _world()
     offer = world.generate_offer()
     donor = next(d for d in world.donors() if d.donor_id == offer.donor_id)
-    ctx = build_context_provider(world)(_input(world, offer_id=offer.offer_id))
+    ctx = build_context_provider(world)("commit_placement", _input(world, offer_id=offer.offer_id))
     assert ctx.donor_is_novel == (donor.donation_count < 1)
 
 
@@ -166,7 +172,8 @@ def test_the_threshold_decides_what_counts_as_novel():
     offer = world.generate_offer()
     donor = next(d for d in world.donors() if d.donor_id == offer.donor_id)
     strict = build_context_provider(world, donor_is_novel_threshold=donor.donation_count + 1)
-    assert strict(_input(world, offer_id=offer.offer_id)).donor_is_novel is True
+    ctx = strict("commit_placement", _input(world, offer_id=offer.offer_id))
+    assert ctx.donor_is_novel is True
 
 
 # --- fail closed ------------------------------------------------------------------
@@ -174,7 +181,9 @@ def test_the_threshold_decides_what_counts_as_novel():
 
 def test_an_unknown_pantry_escalates_rather_than_waving_through():
     world = _world()
-    ctx = build_context_provider(world)(_input(world, pantry_id="pan-does-not-exist"))
+    ctx = build_context_provider(world)(
+        "commit_placement", _input(world, pantry_id="pan-does-not-exist")
+    )
     assert ctx.has_viable_match is False
     assert ctx.liability_ok is False
     assert _escalates(ctx)
@@ -184,19 +193,19 @@ def test_a_missing_temp_class_escalates():
     world = _world()
     tool_input = _input(world)
     del tool_input["temp_class"]
-    ctx = build_context_provider(world)(tool_input)
+    ctx = build_context_provider(world)("commit_placement", tool_input)
     assert _escalates(ctx)
 
 
 def test_an_unparseable_eta_escalates():
     world = _world()
-    ctx = build_context_provider(world)(_input(world, eta="tomorrow lunchtime"))
+    ctx = build_context_provider(world)("commit_placement", _input(world, eta="tomorrow lunchtime"))
     assert _escalates(ctx)
 
 
 def test_a_naive_eta_escalates_rather_than_guessing_a_timezone():
     world = _world()
-    ctx = build_context_provider(world)(_input(world, eta="2026-09-01T12:20:00"))
+    ctx = build_context_provider(world)("commit_placement", _input(world, eta="2026-09-01T12:20:00"))
     assert _escalates(ctx)
 
 
@@ -204,17 +213,18 @@ def test_a_missing_weight_escalates():
     world = _world()
     tool_input = _input(world)
     del tool_input["weight_kg"]
-    assert _escalates(build_context_provider(world)(tool_input))
+    assert _escalates(build_context_provider(world)("commit_placement", tool_input))
 
 
 def test_a_non_numeric_weight_escalates():
     world = _world()
-    assert _escalates(build_context_provider(world)(_input(world, weight_kg="loads")))
+    provide = build_context_provider(world)
+    assert _escalates(provide("commit_placement", _input(world, weight_kg="loads")))
 
 
 def test_an_empty_input_escalates():
     world = _world()
-    assert _escalates(build_context_provider(world)({}))
+    assert _escalates(build_context_provider(world)("commit_placement", {}))
 
 
 def test_the_provider_never_raises_on_rubbish():
@@ -222,7 +232,7 @@ def test_the_provider_never_raises_on_rubbish():
     world = _world()
     provide = build_context_provider(world)
     for rubbish in ({"pantry_id": None}, {"weight_kg": -5}, {"dietary_flags": "pork"}, {}):
-        assert _escalates(provide(rubbish))
+        assert _escalates(provide("commit_placement", rubbish))
 
 
 # --- the default wiring actually uses this ----------------------------------------
@@ -234,7 +244,9 @@ def test_build_default_policy_pairs_the_level_with_a_world_derived_provider():
     world = _world()
     policy = build_default_policy(world, AutonomyLevel.TRUSTED)
     assert policy.level is AutonomyLevel.TRUSTED
-    ctx = policy.context_provider(_input(world, pantry_id="pan-does-not-exist"))
+    ctx = policy.context_provider(
+        "commit_placement", _input(world, pantry_id="pan-does-not-exist")
+    )
     assert ctx.has_viable_match is False
 
 
@@ -338,6 +350,7 @@ def test_understating_the_cold_chain_does_not_buy_permission():
     stale = world.generate_offer()                     # the default seed's offer
     assert stale.minutes_out_of_refrigeration > 0, "this seed no longer proves the point"
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(world, offer_id=stale.offer_id, minutes_out_of_refrigeration=0.0)
     )
     assert ctx.safety_confidence < 0.99
@@ -353,6 +366,7 @@ def test_omitting_a_dietary_flag_does_not_buy_permission():
         if any("pork" in lot.dietary_flags for lot in world.generate_offer(rng_seed=seed).lots)
     )
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(
             world,
             offer_id=porky.offer_id,
@@ -399,6 +413,7 @@ def test_a_registered_offer_still_catches_an_omitted_dietary_flag():
     world = _world()
     world.register_offer(_pork_offer())
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(
             world,
             offer_id="off-submitted",
@@ -433,6 +448,7 @@ def test_without_registration_the_same_call_is_undefended():
     """
     world = _world()                                # deliberately NOT registered
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(
             world,
             offer_id="off-submitted",
@@ -449,6 +465,7 @@ def test_a_registered_offer_overrides_an_understated_cold_chain():
     stale = _pork_offer("off-stale")
     world.register_offer(stale.model_copy(update={"minutes_out_of_refrigeration": 300.0}))
     ctx = build_context_provider(world)(
+        "commit_placement",
         _input(world, offer_id="off-stale", minutes_out_of_refrigeration=0.0)
     )
     assert ctx.liability_ok is False                # 300 minutes against a 240 budget
@@ -467,3 +484,246 @@ def test_every_one_of_the_four_is_stopped_at_the_strictest_level_too():
     for level in AutonomyLevel.order():
         for case in cases:
             assert _stopped(world, level, **case), f"{level} let {case} through"
+
+
+# --- the four guarded tools that place nothing -------------------------------------
+#
+# ``build_context_provider`` was written for ``commit_placement``'s argument shape.
+# The other guarded tools have no ``weight_kg``, so every one of them fell into the
+# ``weight_kg <= 0`` branch and escalated at every autonomy level - which broke the
+# loop (the agent is told to commit and then dispatch, so every run paused on the
+# dispatch) and, worse, told the coordinator five things about a driver dispatch that
+# were not true of it, starting with "Bill Emerson Act protection is not clearly
+# established for this donation".
+#
+# The rules genuinely applicable to each tool. Nothing outside these sets may ever be
+# reported for that tool, at any autonomy level, on any input - true or false, a rule
+# about pantry shelves is not a statement about a text message.
+APPLICABLE_RULES = {
+    "dispatch_driver": {"liability_uncertain", "novel_donor"},
+    "notify_pantry": set(),
+    "notify_donor": {"novel_donor"},
+}
+
+
+def _established_donor(world: SimulatedCity) -> str:
+    match = next((d for d in world.donors() if d.donation_count >= 1), None)
+    assert match is not None, "the default seed has no donor with any donation history"
+    return match.donor_id
+
+
+def _register(world: SimulatedCity, offer_id: str, **overrides) -> DonationOffer:
+    """A registered offer, fresh and from a known donor unless overridden."""
+    base = dict(
+        offer_id=offer_id,
+        donor_id=_established_donor(world),
+        lots=[
+            FoodLot(
+                description="bagged carrots",
+                weight_kg=15.0,
+                temp_class=TempClass.CHILLED,
+            )
+        ],
+        ready_at=NOW,
+        pickup_address="Strip District, Pittsburgh, PA",
+        lat=40.44,
+        lon=-79.99,
+        minutes_out_of_refrigeration=0.0,
+    )
+    offer = DonationOffer(**{**base, **overrides})
+    world.register_offer(offer)
+    return offer
+
+
+def _call(world, tool_name, tool_input, level=AutonomyLevel.TRUSTED):
+    """Drive the real policy for one guarded call; return the action and what fired."""
+    from types import SimpleNamespace
+
+    from gleaner.loops.place.runner import build_default_policy
+
+    policy = build_default_policy(world, level)
+    action = policy.before_tool_call(
+        SimpleNamespace(tool_use={"name": tool_name, "input": tool_input})
+    )
+    return action, {hit.rule for hit in policy.last_hits}
+
+
+def _dispatch_input(offer_id: str = "off-routine") -> dict:
+    return {
+        "driver_id": "drv-1",
+        "offer_id": offer_id,
+        "pickup_address": "Strip District, Pittsburgh, PA",
+    }
+
+
+# -- the loop can finish: routine calls are not stopped -----------------------------
+
+
+def test_a_routine_dispatch_proceeds_at_trusted():
+    """The functional half of the bug: every run paused on the dispatch after commit."""
+    from strands.interventions import Proceed
+
+    world = _world()
+    offer = _register(world, "off-routine")
+    action, fired = _call(world, "dispatch_driver", _dispatch_input(offer.offer_id))
+    assert isinstance(action, Proceed), fired
+    assert fired == set()
+
+
+def test_a_routine_notify_pantry_proceeds_at_trusted():
+    from strands.interventions import Proceed
+
+    world = _world()
+    pantry = _open_unrestricted_pantry(world)
+    action, fired = _call(world, "notify_pantry", {"pantry_id": pantry, "message": "on its way"})
+    assert isinstance(action, Proceed), fired
+    assert fired == set()
+
+
+def test_a_routine_notify_donor_proceeds_at_trusted():
+    from strands.interventions import Proceed
+
+    world = _world()
+    action, fired = _call(
+        world, "notify_donor", {"donor_id": _established_donor(world), "message": "thank you"}
+    )
+    assert isinstance(action, Proceed), fired
+    assert fired == set()
+
+
+def test_commit_then_dispatch_both_clear_the_guard_in_one_run():
+    """The PLACE loop's actual sequence. It has to be able to run to the end."""
+    from strands.interventions import Proceed
+
+    world = _world()
+    offer = _register(world, "off-routine")
+    pantry = _open_unrestricted_pantry(world)
+    commit, _ = _call(
+        world,
+        "commit_placement",
+        _input(world, offer_id=offer.offer_id, pantry_id=pantry, weight_kg=15.0),
+    )
+    dispatch, _ = _call(world, "dispatch_driver", _dispatch_input(offer.offer_id))
+    assert isinstance(commit, Proceed)
+    assert isinstance(dispatch, Proceed)
+
+
+# -- honesty: only applicable rules, ever -------------------------------------------
+
+
+def test_a_dispatch_never_reports_a_dietary_or_capacity_rule():
+    """A dispatch moves a person. It puts nothing on a shelf and feeds nobody."""
+    world = _world()
+    _register(world, "off-routine")
+    _register(world, "off-pork", minutes_out_of_refrigeration=300.0, donor_id="don-nobody",
+              lots=[FoodLot(description="pork sausages", weight_kg=12.0,
+                            temp_class=TempClass.CHILLED, dietary_flags=["pork"])])
+    inputs = [
+        _dispatch_input("off-routine"),
+        _dispatch_input("off-pork"),
+        _dispatch_input("off-never-seen"),
+        {},
+        {"offer_id": None},
+        {"offer_id": 42, "driver_id": None},
+    ]
+    for level in AutonomyLevel.order():
+        for tool_input in inputs:
+            _, fired = _call(world, "dispatch_driver", tool_input, level)
+            assert "dietary_conflict" not in fired, (level, tool_input)
+            assert "capacity_overrun" not in fired, (level, tool_input)
+
+
+def test_no_guarded_tool_reports_a_rule_that_is_not_about_it():
+    world = _world()
+    _register(world, "off-routine")
+    pantry = _open_unrestricted_pantry(world)
+    calls = {
+        "dispatch_driver": [
+            _dispatch_input("off-routine"), _dispatch_input("off-never-seen"), {},
+        ],
+        "notify_pantry": [
+            {"pantry_id": pantry, "message": "hi"}, {"pantry_id": "pan-nope"}, {},
+        ],
+        "notify_donor": [
+            {"donor_id": _established_donor(world), "message": "hi"},
+            {"donor_id": "don-nobody"}, {},
+        ],
+    }
+    for level in AutonomyLevel.order():
+        for tool_name, inputs in calls.items():
+            for tool_input in inputs:
+                _, fired = _call(world, tool_name, tool_input, level)
+                assert fired <= APPLICABLE_RULES[tool_name], (level, tool_name, tool_input, fired)
+
+
+def test_the_dispatch_escalation_prompt_says_nothing_about_pantries_or_food_fit():
+    """A coordinator must read only sentences that are true of the dispatch."""
+    world = _world()
+    action, _ = _call(world, "dispatch_driver", _dispatch_input("off-never-seen"))
+    prompt = action.prompt.lower()
+    for placement_word in ("pantry", "dietary", "capacity", "slack", "store", "kg exceeds"):
+        assert placement_word not in prompt, prompt
+    assert prompt.endswith("approve this dispatch driver?")
+
+
+# -- fail closed: neutral is never permissive about something real -------------------
+
+
+def test_a_dispatch_for_an_unidentifiable_donation_escalates_at_every_level():
+    """We cannot say whose food this is, so we can vouch for neither it nor the donor."""
+    from strands.interventions import Confirm
+
+    world = _world()
+    for level in AutonomyLevel.order():
+        action, fired = _call(world, "dispatch_driver", _dispatch_input("off-never-seen"), level)
+        assert isinstance(action, Confirm), level
+        assert "liability_uncertain" in fired, level
+
+
+def test_a_dispatch_for_food_already_past_its_cold_chain_escalates_at_every_level():
+    """Do not send a volunteer across the city for something already destined for the bin."""
+    from strands.interventions import Confirm
+
+    world = _world()
+    _register(world, "off-spoiled", minutes_out_of_refrigeration=300.0)   # budget is 240
+    for level in AutonomyLevel.order():
+        action, fired = _call(world, "dispatch_driver", _dispatch_input("off-spoiled"), level)
+        assert isinstance(action, Confirm), level
+        assert fired == {"liability_uncertain"}, level
+
+
+def test_an_unknown_donor_is_still_novel_on_a_notification():
+    from strands.interventions import Confirm
+
+    world = _world()
+    action, fired = _call(
+        world, "notify_donor", {"donor_id": "don-nobody"}, AutonomyLevel.BALANCED
+    )
+    assert isinstance(action, Confirm)
+    assert fired == {"novel_donor"}
+
+
+# -- a guarded tool nobody has taught the provider about ----------------------------
+
+
+def test_the_provider_declines_to_describe_a_tool_it_does_not_know():
+    provide = build_context_provider(_world())
+    assert provide("send_outreach", {}) is None
+    assert provide("some_future_tool", {"anything": 1}) is None
+    assert provide("commit_placement", _input(_world())) is not None
+
+
+def test_send_outreach_escalates_at_every_level_with_a_reason_true_of_it():
+    """Guarded by name, no tool behind it yet. Undescribable is not the same as safe."""
+    from strands.interventions import Confirm
+
+    from gleaner.policy.escalation import UNASSESSABLE_RULE
+
+    world = _world()
+    for level in AutonomyLevel.order():
+        action, fired = _call(world, "send_outreach", {"business": "Penn Ave Bakery"}, level)
+        assert isinstance(action, Confirm), level
+        assert action.reason == UNASSESSABLE_RULE
+        assert fired == {UNASSESSABLE_RULE}
+        assert "no way to judge the risk" in action.prompt
+        assert "Emerson" not in action.prompt

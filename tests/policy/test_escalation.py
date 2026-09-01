@@ -4,7 +4,12 @@ from types import SimpleNamespace
 from strands.interventions import Confirm, Proceed
 
 from gleaner.domain.types import AutonomyLevel
-from gleaner.policy.escalation import GUARDED_TOOLS, EscalationPolicy, decision_is_approval
+from gleaner.policy.escalation import (
+    GUARDED_TOOLS,
+    UNASSESSABLE_RULE,
+    EscalationPolicy,
+    decision_is_approval,
+)
 from gleaner.policy.rules import PlacementContext
 
 
@@ -22,7 +27,9 @@ def _event(tool_name, tool_input=None):
 
 
 def _policy(ctx=None, level=AutonomyLevel.BALANCED):
-    return EscalationPolicy(level=level, context_provider=lambda _inp: ctx or _ctx())
+    return EscalationPolicy(
+        level=level, context_provider=lambda _tool, _inp: ctx or _ctx()
+    )
 
 
 def test_unguarded_tool_always_proceeds():
@@ -74,7 +81,7 @@ def test_policy_records_what_fired_for_the_inbox():
 def test_last_hits_cleared_on_a_clean_call():
     policy = _policy(_ctx(margin_minutes=2.0))
     policy.before_tool_call(_event("commit_placement"))
-    policy.context_provider = lambda _inp: _ctx()
+    policy.context_provider = lambda _tool, _inp: _ctx()
     policy.before_tool_call(_event("commit_placement"))
     assert policy.last_hits == []
 
@@ -90,3 +97,61 @@ def test_approval_predicate_accepts_only_structured_approval():
 def test_handler_overrides_before_tool_call_at_class_level():
     # The framework only detects class-level overrides.
     assert "before_tool_call" in EscalationPolicy.__dict__
+
+
+# --- the policy asks about a named tool, and copes when the answer is "I cannot" ---
+
+
+def test_the_policy_tells_the_provider_which_tool_it_is_judging():
+    """Without the name the provider cannot tell a placement from a dispatch."""
+    seen: list[str] = []
+
+    policy = EscalationPolicy(
+        level=AutonomyLevel.BALANCED,
+        context_provider=lambda tool, _inp: seen.append(tool) or _ctx(),
+    )
+    policy.before_tool_call(_event("dispatch_driver", {"driver_id": "drv-1"}))
+    assert seen == ["dispatch_driver"]
+
+
+def test_an_undescribable_guarded_tool_escalates_rather_than_proceeding():
+    policy = EscalationPolicy(
+        level=AutonomyLevel.TRUSTED, context_provider=lambda _tool, _inp: None
+    )
+    action = policy.before_tool_call(_event("send_outreach"))
+    assert isinstance(action, Confirm)
+    assert action.reason == UNASSESSABLE_RULE
+    assert action.evaluate is decision_is_approval
+
+
+def test_the_undescribable_reason_reaches_the_inbox_rather_than_going_missing():
+    """``_result_from`` reads ``last_hits`` to name the pause; it must not be empty."""
+    policy = EscalationPolicy(
+        level=AutonomyLevel.TRUSTED, context_provider=lambda _tool, _inp: None
+    )
+    policy.before_tool_call(_event("send_outreach"))
+    assert [hit.rule for hit in policy.last_hits] == [UNASSESSABLE_RULE]
+    assert "send outreach" in policy.last_hits[0].detail
+
+
+def test_the_undescribable_prompt_claims_nothing_about_the_call():
+    policy = EscalationPolicy(
+        level=AutonomyLevel.CONSERVATIVE, context_provider=lambda _tool, _inp: None
+    )
+    action = policy.before_tool_call(_event("send_outreach"))
+    assert action.prompt == (
+        "Gleaner has no way to judge the risk of a send outreach, so it will not "
+        "make one unattended. Approve this send outreach?"
+    )
+
+
+def test_an_unguarded_tool_is_never_even_described():
+    """The provider must not be consulted for a read-only tool."""
+    calls: list[str] = []
+
+    policy = EscalationPolicy(
+        level=AutonomyLevel.CONSERVATIVE,
+        context_provider=lambda tool, _inp: calls.append(tool) or _ctx(),
+    )
+    assert isinstance(policy.before_tool_call(_event("find_pantries")), Proceed)
+    assert calls == []
