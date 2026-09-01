@@ -1,0 +1,760 @@
+<title>Gleaner Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+  /* Single committed light theme. No dark mode by design. */
+  :root{
+    --orange:#FF4F00; --orange-hover:#E64700; --orange-tint:#FFF0E9; --orange-line:#FFD6C2;
+    --violet:#6B4EFF; --violet-tint:#F3F1FE; --violet-line:#DDD7FF;
+    --cream:#FFFDF9; --surface:#FFFFFF; --surface-2:#FAF7F3;
+    --ink:#201515; --ink-2:#5C5551; --ink-3:#8C8380;
+    --line:#E8E2DC; --line-2:#F1ECE6;
+    --ok:#0E7A54; --ok-tint:#E6F4EE;
+    --warn:#A85D00; --warn-tint:#FCF0E0;
+    --crit:#B62A1B; --crit-tint:#FBEAE7;
+    --shadow:0 1px 2px rgba(32,21,21,.05);
+    --shadow-lift:0 4px 16px rgba(32,21,21,.08);
+    --r:8px; --r-sm:6px;
+    --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --display:"Figtree","Inter",system-ui,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--cream); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.5;
+       -webkit-font-smoothing:antialiased}
+  h1,h2,h3,h4{font-family:var(--display); text-wrap:balance; margin:0; letter-spacing:-.015em}
+  p{margin:0}
+  button{font:inherit}
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+  [hidden]{display:none!important}
+  :focus-visible{outline:2px solid var(--orange); outline-offset:2px; border-radius:4px}
+
+  .shell{display:grid; grid-template-columns:294px 1fr; min-height:100vh}
+
+  /* sidebar */
+  .side{background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column;
+        position:sticky; top:0; height:100vh; padding:20px 16px 16px}
+  .brand{display:flex; align-items:center; gap:9px; padding:0 6px 20px; font-family:var(--display);
+         font-weight:800; font-size:19px; letter-spacing:-.03em}
+  .mark{width:22px;height:22px;border-radius:5px;background:var(--orange);flex:none;position:relative}
+  .mark::after{content:"";position:absolute;inset:6px 5px;
+    background:linear-gradient(180deg,#fff 0 2px,transparent 2px 4px,#fff 4px 6px,transparent 6px 8px,#fff 8px 10px)}
+  .cta{width:100%;height:46px;border:0;border-radius:var(--r-sm);background:var(--orange);color:#fff;
+       font-family:var(--display);font-weight:700;font-size:15.5px;display:flex;align-items:center;
+       justify-content:center;gap:8px;cursor:pointer;transition:background .15s}
+  .cta:hover{background:var(--orange-hover)}
+  .nav{margin-top:20px;display:flex;flex-direction:column;gap:2px}
+  .nav button{display:flex;align-items:center;gap:11px;width:100%;height:40px;padding:0 10px;
+       border:0;background:none;border-radius:var(--r-sm);color:var(--ink);font-size:15px;font-weight:500;
+       cursor:pointer;text-align:left;transition:background .12s}
+  .nav button:hover{background:var(--surface-2)}
+  .nav button.on{background:var(--orange-tint);font-weight:600}
+  .nav button.on svg{color:var(--orange)}
+  .nav svg{width:19px;height:19px;flex:none;color:var(--ink-2)}
+  .badge{margin-left:auto;font-family:var(--mono);font-size:11.5px;font-weight:500;min-width:21px;height:20px;
+         padding:0 6px;border-radius:10px;background:var(--crit);color:#fff;display:grid;place-items:center}
+  .badge.zero{background:var(--line-2);color:var(--ink-3)}
+  .divider{height:1px;background:var(--line);margin:14px 6px}
+  .foot{margin-top:auto;padding:16px 8px 4px;border-top:1px solid var(--line)}
+  .meter-row{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-2);margin-bottom:8px}
+  .meter{height:5px;border-radius:3px;background:var(--line-2);overflow:hidden}
+  .meter i{display:block;height:100%;background:var(--orange);border-radius:3px;transition:width .4s}
+  .foot small{display:block;margin-top:9px;font-size:12.5px;color:var(--ink-3)}
+
+  /* topbar */
+  .top{height:68px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;
+       align-items:center;gap:16px;padding:0 22px;position:sticky;top:0;z-index:5}
+  .search{flex:1;max-width:780px;margin:0 auto;height:40px;border:1px solid var(--line);border-radius:var(--r-sm);
+          display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--surface)}
+  .search:focus-within{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-tint)}
+  .search input{flex:1;border:0;outline:0;font-size:14.5px;background:none;color:var(--ink)}
+  .search input::placeholder{color:var(--ink-3)}
+  .kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-radius:4px;padding:2px 6px;
+       color:var(--ink-3);background:var(--surface-2)}
+  .tools{display:flex;align-items:center;gap:8px;flex:none}
+  .btn-out{height:36px;padding:0 14px;border:1px solid var(--line);border-radius:var(--r-sm);
+           background:var(--surface);font-size:14px;font-weight:600;color:var(--ink);cursor:pointer}
+  .btn-out:hover{background:var(--surface-2)}
+  .avatar{width:34px;height:34px;border-radius:50%;background:#B9DCF5;color:#134A6E;display:grid;
+          place-items:center;font-weight:700;font-size:13px;font-family:var(--display)}
+
+  main{padding:44px 32px 96px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .phead{margin-bottom:22px}
+  .phead h1{font-size:30px;font-weight:700}
+  .phead p{color:var(--ink-2);margin-top:7px;max-width:70ch}
+  .hero{text-align:center;margin-bottom:28px}
+  .hero h1{font-size:clamp(27px,3.2vw,40px);font-weight:700}
+  .hero p{margin-top:11px;color:var(--ink-2);font-size:16px}
+
+  .console{border:1px solid var(--orange-line);border-radius:10px;background:var(--surface);padding:18px 20px 14px;
+           box-shadow:var(--shadow-lift);max-width:940px;margin:0 auto}
+  .chd{display:flex;align-items:center;gap:9px;font-weight:700;font-family:var(--display);font-size:15px;margin-bottom:14px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-tint)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line-2);border:1px solid var(--line);
+         border-radius:var(--r-sm);overflow:hidden}
+  .stats>div{background:var(--surface);padding:13px 14px}
+  .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:600}
+  .v{font-family:var(--display);font-size:23px;font-weight:700;margin-top:3px;letter-spacing:-.02em}
+  .v small{font-size:13px;color:var(--ink-3);font-weight:600}
+  .caption{text-align:center;color:var(--ink-3);font-size:13px;margin-top:11px}
+
+  h2.sec{font-size:20px;font-weight:700;margin:40px 0 6px}
+  .lede{color:var(--ink-2);margin:0 0 16px;max-width:70ch}
+
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;
+        display:flex;gap:13px;align-items:flex-start;box-shadow:var(--shadow);text-align:left;cursor:pointer;
+        transition:border-color .15s,box-shadow .15s;width:100%}
+  .tile:hover{border-color:var(--orange-line);box-shadow:var(--shadow-lift)}
+  .ico{width:38px;height:38px;border-radius:var(--r-sm);display:grid;place-items:center;flex:none;
+       background:var(--orange-tint);color:var(--orange)}
+  .ico svg{width:20px;height:20px}
+  .ico.v2{background:var(--violet-tint);color:var(--violet)}
+  .ico.g{background:var(--ok-tint);color:var(--ok)}
+  .tile h3{font-size:15.5px;font-weight:700}
+  .tile p{font-size:13.5px;color:var(--ink-2);margin-top:4px;line-height:1.45}
+  .pill{display:inline-flex;align-items:center;height:21px;padding:0 8px;border-radius:11px;font-size:11px;
+        font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin-top:9px}
+  .pill.ship{background:var(--ok-tint);color:var(--ok)}
+  .pill.next{background:var(--warn-tint);color:var(--warn)}
+
+  /* decision cards */
+  .dcard{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:18px 20px;
+         margin-bottom:12px;box-shadow:var(--shadow)}
+  .dcard.hard{border-color:var(--crit-tint);box-shadow:inset 3px 0 0 var(--crit),var(--shadow)}
+  .dcard.done{opacity:.62}
+  .eyebrow{display:flex;align-items:center;gap:7px;font-weight:700;font-size:12.5px;margin-bottom:8px;
+           text-transform:uppercase;letter-spacing:.05em}
+  .eyebrow.hard{color:var(--crit)} .eyebrow.soft{color:var(--warn)} .eyebrow.okd{color:var(--ok)}
+  .dcard h3{font-size:17.5px;font-weight:700}
+  .why{margin-top:8px;color:var(--ink-2);font-size:14px;max-width:80ch}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border:1px solid var(--line);
+        color:var(--ink-2);padding:3px 8px;border-radius:4px}
+  .chip.nn{background:var(--crit-tint);border-color:var(--crit-tint);color:var(--crit);font-weight:500}
+  .acts{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .sm{height:33px;padding:0 13px;border-radius:var(--r-sm);font-size:13.5px;font-weight:600;cursor:pointer;
+      border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+  .sm:hover{background:var(--surface-2)}
+  .sm.pri{background:var(--orange);border-color:var(--orange);color:#fff}
+  .sm.pri:hover{background:var(--orange-hover)}
+  .sm.danger{color:var(--crit);border-color:var(--crit-tint)}
+  .resolved{margin-top:12px;padding:10px 12px;background:var(--surface-2);border-radius:var(--r-sm);
+            font-size:13.5px;color:var(--ink-2)}
+  .resolved b{color:var(--ink)}
+
+  .empty{border:1px dashed var(--line);border-radius:var(--r);padding:44px 20px;text-align:center;color:var(--ink-3)}
+  .empty strong{display:block;font-family:var(--display);font-size:17px;color:var(--ink);margin-bottom:6px}
+
+  /* generic list rows */
+  .rows{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+  .row{display:grid;gap:14px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line-2)}
+  .row:last-child{border-bottom:0}
+  .row.offer{grid-template-columns:1fr 116px 128px 96px}
+  .row.pantry{grid-template-columns:1fr 150px 190px 108px}
+  .row.driver{grid-template-columns:1fr 130px 150px 96px}
+  .rh{background:var(--surface-2);font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;
+      color:var(--ink-3);font-weight:700}
+  .nm{font-weight:600}
+  .sub{font-size:13px;color:var(--ink-3);margin-top:2px}
+  .clock{font-family:var(--mono);font-weight:500;font-size:14px}
+  .clock.ok{color:var(--ok)} .clock.warn{color:var(--warn)} .clock.crit{color:var(--crit)}
+  .bar{height:6px;border-radius:3px;background:var(--line-2);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:3px;background:var(--ok)}
+  .bar i.warn{background:var(--warn)} .bar i.crit{background:var(--crit)}
+  .tag{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:4px;white-space:nowrap}
+  .tag.auto{background:var(--ok-tint);color:var(--ok)}
+  .tag.held{background:var(--crit-tint);color:var(--crit)}
+  .tag.cold{background:#E8F1FA;color:#1E5C8A}
+  .tag.frozen{background:#E4EEFB;color:#1B4B87}
+  .tag.amb{background:var(--warn-tint);color:var(--warn)}
+
+  /* autonomy */
+  .dial{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .lvl{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden;
+       cursor:pointer;text-align:left;padding:0;transition:border-color .15s,box-shadow .15s}
+  .lvl:hover{border-color:var(--orange-line)}
+  .lvl.on{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-tint)}
+  .lvl header{padding:13px 15px;border-bottom:1px solid var(--line);font-family:var(--display);
+              font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+  .lvl.on header{background:var(--orange-tint)}
+  .lvl .state{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);font-weight:500}
+  .lvl.on .state{color:var(--orange)}
+  .lvl dl{margin:0;padding:6px 15px 14px}
+  .lvl dt{font-size:12px;color:var(--ink-3);margin-top:9px}
+  .lvl dd{margin:1px 0 0;font-family:var(--mono);font-size:14px;font-weight:500}
+  .lvl .out{padding:11px 15px;border-top:1px solid var(--line);background:var(--surface-2);font-size:13px;
+            color:var(--ink-2)}
+  .lvl .out b{color:var(--ink);font-family:var(--mono)}
+
+  .rules{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+  .rule-i{display:flex;gap:11px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);
+          border-radius:var(--r-sm);padding:12px 13px}
+  .rule-i.firing{border-color:var(--crit);background:var(--crit-tint)}
+  .lock{flex:none;width:21px;height:21px;border-radius:4px;display:grid;place-items:center;background:var(--line-2);
+        color:var(--ink-3);font-size:11px;font-weight:700}
+  .lock.hard{background:var(--crit-tint);color:var(--crit)}
+  .rule-i .rn{font-family:var(--mono);font-size:12.5px}
+  .rule-i .rd{font-size:13px;color:var(--ink-2);margin-top:3px;line-height:1.45}
+  .rule-i .cnt{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink-3);flex:none}
+
+  /* timeline */
+  .tl{border-left:2px solid var(--line);margin-left:8px;padding-left:20px;display:flex;flex-direction:column;gap:15px}
+  .ev{position:relative}
+  .ev::before{content:"";position:absolute;left:-27px;top:5px;width:10px;height:10px;border-radius:50%;
+              background:var(--surface);border:2px solid var(--line)}
+  .ev.act::before{border-color:var(--orange);background:var(--orange)}
+  .ev.human::before{border-color:var(--violet);background:var(--violet)}
+  .ev .t{font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+  .ev .m{margin-top:2px;font-size:14.5px}
+  .ev .m b{font-weight:600}
+  .ev .d{font-size:13px;color:var(--ink-2);margin-top:3px}
+
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow)}
+  .card h3{font-size:16px;font-weight:700;display:flex;align-items:center;gap:9px}
+  .card ul{margin:11px 0 0;padding-left:17px;color:var(--ink-2);font-size:14px;line-height:1.62}
+  .card li::marker{color:var(--orange)}
+  .card li b{color:var(--ink);font-weight:600}
+
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:680px;font-size:14px}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  th{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:700;background:var(--surface-2)}
+  tr:last-child td{border-bottom:0}
+  td.f{font-weight:600;white-space:nowrap}
+
+  .note{border-left:3px solid var(--orange);background:var(--surface-2);padding:13px 16px;
+        border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:14px;color:var(--ink-2);margin-top:16px}
+  .note b{color:var(--ink)}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);
+         color:#fff;padding:12px 18px;border-radius:var(--r);font-size:14px;font-weight:500;z-index:50;
+         box-shadow:0 8px 28px rgba(32,21,21,.28);opacity:0;transition:all .28s;pointer-events:none}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+  footer{max-width:1180px;margin:52px auto 0;padding-top:22px;border-top:1px solid var(--line);color:var(--ink-3);
+         font-size:13px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
+  @media (max-width:1080px){
+    .shell{grid-template-columns:1fr} .side{display:none}
+    .tiles,.cards,.rules,.dial{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .row.offer,.row.pantry,.row.driver{grid-template-columns:1fr auto}
+    .row .hide-s{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><span class="mark"></span>gleaner</div>
+    <button class="cta" id="newOffer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" width="17" height="17"><path d="M12 5v14M5 12h14"/></svg>
+      Log an offer
+    </button>
+    <nav class="nav" id="nav"></nav>
+    <div class="foot">
+      <div class="meter-row"><span>Placed without you</span><span class="mono" id="meterTxt">0 / 0</span></div>
+      <div class="meter"><i id="meterBar" style="width:0%"></i></div>
+      <small id="meterSub">&nbsp;</small>
+    </div>
+  </aside>
+
+  <div>
+    <header class="top">
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17" style="color:var(--ink-3)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" placeholder="Search offers, pantries, drivers" aria-label="Search">
+        <span class="kbd">Ctrl K</span>
+      </div>
+      <div class="tools">
+        <button class="btn-out" id="reset">Reset demo</button>
+        <div class="avatar">RK</div>
+      </div>
+    </header>
+    <main><div class="wrap" id="view"></div></main>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- policy: mirrors src/gleaner/policy/rules.py ---------- */
+const THRESHOLDS={
+  conservative:{kg:25,margin:120,conf:.95,cap:.50,novel:false},
+  balanced:    {kg:150,margin:60, conf:.85,cap:.80,novel:false},
+  trusted:     {kg:500,margin:30, conf:.70,cap:.95,novel:true}
+};
+const NON_NEGOTIABLE=["liability_uncertain","dietary_conflict"];
+const RULE_TEXT={
+  liability_uncertain:"The cold-chain budget looks blown, so Good Samaritan protection cannot be assumed.",
+  dietary_conflict:"The food clashes with what this pantry's community will accept.",
+  no_viable_match:"Nowhere can take it in time. Someone needs to ring round.",
+  over_value_threshold:"The load is heavier than Gleaner may commit unattended.",
+  tight_window:"The driver would arrive with less slack than your level allows.",
+  safety_ambiguous:"Too little is known about how the food has been held.",
+  capacity_overrun:"The placement would fill more of the cold store than you permit.",
+  novel_donor:"First offer from this donor, and nobody has met them yet."
+};
+function evaluateRules(c,level){
+  const L=THRESHOLDS[level], hits=[];
+  if(!c.liability_ok) hits.push({rule:"liability_uncertain",detail:"Good Samaritan protection is not clearly established for this donation."});
+  if(!c.dietary_ok)   hits.push({rule:"dietary_conflict",detail:"The food conflicts with this pantry's dietary restrictions."});
+  if(!c.has_viable_match) hits.push({rule:"no_viable_match",detail:"No pantry can take this food in time; someone must call around."});
+  if(c.weight_kg>L.kg) hits.push({rule:"over_value_threshold",detail:`${c.weight_kg} kg exceeds the ${level} limit of ${L.kg} kg.`});
+  if(c.margin_minutes<L.margin) hits.push({rule:"tight_window",detail:`Only ${Math.round(c.margin_minutes)} minutes of slack; ${level} requires ${L.margin}.`});
+  if(c.safety_confidence<L.conf) hits.push({rule:"safety_ambiguous",detail:`Safety confidence ${c.safety_confidence.toFixed(2)} is below the ${level} threshold of ${L.conf.toFixed(2)}.`});
+  if(c.capacity_fraction>L.cap) hits.push({rule:"capacity_overrun",detail:`Would fill ${Math.round(c.capacity_fraction*100)}% of the store; ${level} allows ${Math.round(L.cap*100)}%.`});
+  if(c.donor_is_novel&&!L.novel) hits.push({rule:"novel_donor",detail:"First donation from this donor; not yet verified."});
+  return hits;
+}
+
+/* ---------- world ---------- */
+const PANTRIES=[
+  {id:"pan-1",name:"Hill District Pantry",cold:400,used:118,frozen:200,open:"08:00–17:00",diet:[],fresh:212},
+  {id:"pan-2",name:"Homewood Pantry",cold:250,used:96,frozen:80,open:"09:00–18:00",diet:[],fresh:143},
+  {id:"pan-3",name:"Lawrenceville Pantry",cold:600,used:402,frozen:200,open:"08:00–19:00",diet:[],fresh:367},
+  {id:"pan-4",name:"Hazelwood Pantry",cold:120,used:44,frozen:0,open:"10:00–16:00",diet:["pork","alcohol"],fresh:39},
+  {id:"pan-5",name:"Northside Pantry",cold:400,used:151,frozen:80,open:"09:00–17:00",diet:[],fresh:88},
+  {id:"pan-6",name:"Beechview Pantry",cold:250,used:187,frozen:0,open:"10:00–18:00",diet:[],fresh:264},
+  {id:"pan-7",name:"Oakland Pantry",cold:600,used:214,frozen:200,open:"08:00–19:00",diet:[],fresh:301},
+  {id:"pan-8",name:"Squirrel Hill Pantry",cold:120,used:31,frozen:80,open:"09:00–16:00",diet:[],fresh:57}
+];
+const DRIVERS=[
+  {id:"drv-1",name:"Ama Boateng",fridge:true,win:"06:00–14:00",base:"Strip District"},
+  {id:"drv-2",name:"Marcus Hale",fridge:false,win:"08:00–16:00",base:"Homewood"},
+  {id:"drv-3",name:"Priya Raman",fridge:true,win:"07:00–15:00",base:"Oakland"},
+  {id:"drv-4",name:"Dee Whitaker",fridge:false,win:"10:00–18:00",base:"Northside"},
+  {id:"drv-5",name:"Yusuf Kaya",fridge:true,win:"09:00–19:00",base:"Lawrenceville"},
+  {id:"drv-6",name:"Renata Silva",fridge:false,win:"11:00–20:00",base:"Beechview"}
+];
+const SEED=[
+  {id:"off-4821",donor:"Giant Eagle · Shadyside",food:"Mixed salad greens & bagged carrots",kg:38,temp:"chilled",
+   pantry:"pan-5",mins:0,ctx:{weight_kg:38,margin_minutes:186,safety_confidence:.97,capacity_fraction:.47,
+   liability_ok:true,dietary_ok:true,donor_is_novel:false,has_viable_match:true}},
+  {id:"off-5507",donor:"Penn Ave Bakery",food:"Day-old sourdough & rolls",kg:14,temp:"ambient",
+   pantry:"pan-2",mins:0,ctx:{weight_kg:14,margin_minutes:412,safety_confidence:.99,capacity_fraction:.28,
+   liability_ok:true,dietary_ok:true,donor_is_novel:false,has_viable_match:true}},
+  {id:"off-6110",donor:"Steel City Catering",food:"Pork sausages, chilled",kg:120,temp:"chilled",
+   pantry:"pan-4",mins:35,ctx:{weight_kg:120,margin_minutes:198,safety_confidence:.93,capacity_fraction:.61,
+   liability_ok:true,dietary_ok:false,donor_is_novel:false,has_viable_match:true}},
+  {id:"off-6244",donor:"Sysco Pittsburgh",food:"Pallet produce — romaine, peppers",kg:310,temp:"chilled",
+   pantry:"pan-3",mins:20,ctx:{weight_kg:310,margin_minutes:142,safety_confidence:.91,capacity_fraction:.72,
+   liability_ok:true,dietary_ok:true,donor_is_novel:false,has_viable_match:true}},
+  {id:"off-6390",donor:"Strip District Produce",food:"Berries & stone fruit",kg:44,temp:"chilled",
+   pantry:"pan-8",mins:96,ctx:{weight_kg:44,margin_minutes:41,safety_confidence:.88,capacity_fraction:.63,
+   liability_ok:true,dietary_ok:true,donor_is_novel:false,has_viable_match:true}},
+  {id:"off-6455",donor:"Hilltop Cafe",food:"Prepared sandwiches",kg:22,temp:"chilled",
+   pantry:"pan-6",mins:64,ctx:{weight_kg:22,margin_minutes:151,safety_confidence:.78,capacity_fraction:.83,
+   liability_ok:true,dietary_ok:true,donor_is_novel:true,has_viable_match:true}},
+  {id:"off-6501",donor:"Kaufmann Grocers",food:"Yoghurt & soft cheese",kg:31,temp:"chilled",
+   pantry:"pan-1",mins:268,ctx:{weight_kg:31,margin_minutes:22,safety_confidence:.41,capacity_fraction:.38,
+   liability_ok:false,dietary_ok:true,donor_is_novel:false,has_viable_match:true}}
+];
+const BUDGET={chilled:240,frozen:60,ambient:4320};
+
+/* ---------- state ---------- */
+let S;
+function boot(){
+  const t0=Date.now();
+  S={level:"balanced",route:"today",q:"",timeline:[],
+     offers:SEED.map(o=>({...o,ctx:{...o.ctx},status:"open",resolution:null,
+        deadline:t0+(BUDGET[o.temp]-o.mins)*60000}))};
+  S.offers.forEach(o=>{
+    if(evaluateRules(o.ctx,S.level).length===0){
+      o.status="placed"; o.resolution={by:"Gleaner",how:"auto"};
+      log("act",`Placed ${o.kg} kg — ${o.food.toLowerCase()}`,`${o.donor} → ${pname(o.pantry)}. Inside every limit at ${S.level}.`);
+    }
+  });
+}
+function pname(id){const p=PANTRIES.find(x=>x.id===id);return p?p.name:id}
+function log(kind,msg,det){S.timeline.unshift({kind,msg,det,at:new Date()})}
+function hitsFor(o){return o.status==="open"?evaluateRules(o.ctx,S.level):[]}
+function pending(){return S.offers.filter(o=>o.status==="open"&&hitsFor(o).length>0)}
+function placed(){return S.offers.filter(o=>o.status==="placed")}
+function autoNow(){return S.offers.filter(o=>o.status==="open"&&hitsFor(o).length===0)}
+
+/* ---------- helpers ---------- */
+const ICONS={
+  today:'<path d="M3 10.5 12 3l9 7.5V21H3z"/>',
+  decisions:'<path d="M4 5h16v14H4z"/><path d="M3 12h5l2 3h4l2-3h5"/>',
+  offers:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  pantries:'<path d="M4 20V9l8-5 8 5v11z"/><path d="M9 20v-6h6v6"/>',
+  drivers:'<path d="M3 13h18l-2-5H5z"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>',
+  autonomy:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>',
+  timeline:'<path d="M4 6h16M4 12h16M4 18h10"/>',
+  impact:'<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
+  features:'<path d="M12 3 3 7.5 12 12l9-4.5z"/><path d="M3 12.5 12 17l9-4.5"/>'
+};
+const NAV=[["today","Today"],["decisions","Decisions"],["offers","Live offers"],["pantries","Pantries"],
+           ["drivers","Drivers"],null,["autonomy","Autonomy"],["timeline","Timeline"],["impact","Impact"],
+           ["features","What it does"]];
+function svg(p){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9">${p}</svg>`}
+function fmtLeft(ms){
+  if(ms<=0) return {t:"expired",c:"crit"};
+  const m=Math.floor(ms/60000), h=Math.floor(m/60);
+  return {t:h>0?`${h}h ${String(m%60).padStart(2,"0")}m`:`${m}m`, c:m<45?"crit":m<120?"warn":"ok"};
+}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");
+  clearTimeout(t._x);t._x=setTimeout(()=>t.classList.remove("show"),2600)}
+
+/* ---------- chrome ---------- */
+function renderNav(){
+  const n=pending().length;
+  $("#nav").innerHTML=NAV.map(item=>{
+    if(!item) return '<div class="divider"></div>';
+    const [id,label]=item;
+    const b=id==="decisions"?`<span class="badge ${n?"":"zero"}">${n}</span>`:"";
+    return `<button data-go="${id}" class="${S.route===id?"on":""}">${svg(ICONS[id])}${label}${b}</button>`;
+  }).join("");
+  const p=placed().length, tot=S.offers.length;
+  $("#meterTxt").textContent=`${p} / ${tot}`;
+  $("#meterBar").style.width=(tot?p/tot*100:0)+"%";
+  $("#meterSub").textContent=n?`${n} held for you at ${S.level}`:"Nothing waiting on you";
+}
+
+/* ---------- views ---------- */
+function vToday(){
+  const n=pending().length, p=placed(), kg=p.reduce((a,o)=>a+o.kg,0);
+  const live=S.offers.filter(o=>o.status==="open"&&o.deadline>Date.now())
+                     .map(o=>o.deadline-Date.now()).sort((a,b)=>a-b)[0];
+  const s=live!=null?fmtLeft(live):{t:"none live",c:"crit"};
+  return `
+  <section class="hero">
+    <h1>${p.length?`${p.length} offer${p.length>1?"s":""} placed themselves this morning, Roger.`:"Nothing placed yet this morning, Roger."}</h1>
+    <p>${n?`${n} need${n>1?"":"s"} you. Everything else is already moving.`:"Nothing is waiting on you."}</p>
+  </section>
+  <section class="console">
+    <div class="chd"><span class="dot"></span>PLACE loop — running</div>
+    <div class="stats">
+      <div><div class="k">Awaiting you</div><div class="v" style="color:${n?"var(--crit)":"var(--ok)"}">${n}</div></div>
+      <div><div class="k">Placed unattended</div><div class="v">${p.length}</div></div>
+      <div><div class="k">Rescued today</div><div class="v">${kg} <small>kg</small></div></div>
+      <div><div class="k">Tightest window</div><div class="v" style="color:var(--${s.c})">${s.t}</div></div>
+    </div>
+    <p class="caption">Gleaner acts on its own inside the limits you set, and stops the moment a call is genuinely yours.</p>
+  </section>
+  <h2 class="sec">The three loops</h2>
+  <p class="lede">Three background loops, one decision inbox — so a coordinator has a single place to look.</p>
+  <div class="tiles">
+    <button class="tile" data-go="offers"><div class="ico">${svg('<path d="M12 3v9l6 3"/><circle cx="12" cy="12" r="9"/>')}</div>
+      <div><h3>Place</h3><p>A donation arrives. Gleaner checks the food is still safe, finds a pantry that can genuinely receive it, routes a driver who beats the clock, and commits.</p><span class="pill ship">Shipped</span></div></button>
+    <button class="tile" data-go="features"><div class="ico v2">${svg('<path d="M3 17l5-6 4 3 5-7 4 4"/>')}</div>
+      <div><h3>Forecast</h3><p>Predicts each pantry's demand and free cold storage a week out, so placement becomes pre-emptive rather than reactive.</p><span class="pill next">Next</span></div></button>
+    <button class="tile" data-go="features"><div class="ico g">${svg('<path d="M4 6h16v12H4z"/><path d="m4 7 8 6 8-6"/>')}</div>
+      <div><h3>Source</h3><p>Notices surplus nobody offered — a grocer who always donates on Tuesday and hasn't — and drafts the ask.</p><span class="pill next">Next</span></div></button>
+  </div>
+  ${n?`<h2 class="sec">Waiting on you</h2><div class="lede">Ranked with the non-negotiable calls first.</div>${pending().slice(0,2).map(dcard).join("")}
+     ${n>2?`<button class="sm" data-go="decisions">See all ${n} decisions</button>`:""}`:""}`;
+}
+
+function dcard(o){
+  const hits=hitsFor(o), nn=hits.some(h=>NON_NEGOTIABLE.includes(h.rule));
+  const alt=PANTRIES.find(p=>p.id!==o.pantry&&p.cold-p.used>=o.kg&&!p.diet.some(d=>o.food.toLowerCase().includes(d)));
+  return `<article class="dcard ${nn?"hard":""}" data-off="${o.id}">
+    <div class="eyebrow ${nn?"hard":"soft"}">
+      ${nn?"Held — non-negotiable rule":"Held — outside your limits"} · ${hits.length} rule${hits.length>1?"s":""}
+    </div>
+    <h3>${esc(o.kg)} kg ${esc(o.food.toLowerCase())} → ${esc(pname(o.pantry))}</h3>
+    <p class="why">${esc(o.donor)}. ${esc(hits.map(h=>h.detail).join(" "))}${alt&&nn?` <b>${esc(alt.name)}</b> can take the full load instead.`:""}</p>
+    <div class="chips">${hits.map(h=>`<span class="chip ${NON_NEGOTIABLE.includes(h.rule)?"nn":""}">${h.rule}</span>`).join("")}</div>
+    <div class="acts">
+      ${alt&&nn?`<button class="sm pri" data-act="reroute" data-id="${o.id}" data-to="${alt.id}">Reroute to ${esc(alt.name.replace(" Pantry",""))}</button>`
+              :`<button class="sm pri" data-act="approve" data-id="${o.id}">Approve placement</button>`}
+      <button class="sm danger" data-act="decline" data-id="${o.id}">Decline</button>
+      <button class="sm" data-act="why" data-id="${o.id}">Why did it stop?</button>
+    </div>
+  </article>`;
+}
+
+function resolvedCard(o){
+  const verb=o.resolution.how==="declined"?"Declined":o.resolution.how==="rerouted"?"Rerouted":"Approved";
+  return '<article class="dcard done">'
+    +`<div class="eyebrow okd">${verb} by ${esc(o.resolution.by)}</div>`
+    +`<h3>${esc(o.kg)} kg ${esc(o.food.toLowerCase())}</h3>`
+    +`<div class="resolved"><b>${esc(o.resolution.note)}</b></div></article>`;
+}
+function vDecisions(){
+  const list=pending();
+  const done=S.offers.filter(o=>o.resolution&&o.resolution.how!=="auto");
+  const head='<div class="phead"><h1>Decisions</h1><p>Gleaner stopped on these. Everything else it handled.'
+    +' Change the <button class="sm" data-go="autonomy" style="height:26px;padding:0 9px">autonomy level</button>'
+    +' and this list re-evaluates instantly.</p></div>';
+  const body=list.length
+    ? list.map(dcard).join("")
+    : `<div class="empty"><strong>Nothing is waiting on you</strong>Every open offer sits inside your ${S.level} limits.</div>`;
+  const tail=done.length ? '<h2 class="sec">Resolved</h2>'+done.map(resolvedCard).join("") : "";
+  return head+body+tail;
+}
+
+function vOffers(){
+  const rows=S.offers.filter(match).map(o=>{
+    const L=fmtLeft(o.deadline-Date.now()), hits=hitsFor(o);
+    const st=o.status==="placed"?'<span class="tag auto">placed</span>'
+            :o.status==="declined"?'<span class="tag held">declined</span>'
+            :hits.length?'<span class="tag held">held</span>':'<span class="tag auto">clear</span>';
+    return `<div class="row offer">
+      <div><div class="nm">${esc(o.food)}</div><div class="sub">${esc(o.donor)} · ${esc(o.id)} · → ${esc(pname(o.pantry))}</div></div>
+      <div><span class="tag ${o.temp==="chilled"?"cold":o.temp==="frozen"?"frozen":"amb"}">${o.temp}</span>
+           <div class="sub mono">${o.kg} kg</div></div>
+      <div><div class="clock ${L.c}" data-dl="${o.deadline}">${L.t}</div><div class="sub">safe window left</div></div>
+      <div>${st}</div></div>`;
+  }).join("");
+  return `<div class="phead"><h1>Live offers</h1><p>Every offer in play, with the real cold-chain clock running on each one. Chilled food carries a 240-minute budget; frozen carries 60.</p></div>
+    <div class="rows"><div class="row offer rh"><div>Food</div><div>Handling</div><div>Window</div><div>State</div></div>
+    ${rows||'<div class="row"><div style="color:var(--ink-3)">Nothing matches that search.</div></div>'}</div>`;
+}
+
+function vPantries(){
+  const rows=PANTRIES.filter(p=>!S.q||p.name.toLowerCase().includes(S.q)).map(p=>{
+    const pct=Math.round(p.used/p.cold*100), c=pct>85?"crit":pct>65?"warn":"";
+    return `<div class="row pantry">
+      <div><div class="nm">${esc(p.name)}</div><div class="sub">${p.open}${p.diet.length?` · does not accept ${p.diet.join(", ")}`:""}</div></div>
+      <div><div class="mono" style="font-size:13.5px">${p.cold-p.used} kg free</div><div class="sub">of ${p.cold} kg chilled</div></div>
+      <div><div class="bar"><i class="${c}" style="width:${pct}%"></i></div><div class="sub">${pct}% full</div></div>
+      <div><div class="mono" style="font-size:13.5px">${p.fresh} kg</div><div class="sub">fresh, 30 days</div></div></div>`;
+  }).join("");
+  return `<div class="phead"><h1>Pantry network</h1><p>Eight sites across Pittsburgh. The <b>fresh, 30 days</b> column drives the equity term — sites that have received least get boosted, so produce doesn't just flow to whoever is nearest the depot.</p></div>
+    <div class="rows"><div class="row pantry rh"><div>Site</div><div>Cold storage</div><div>Utilisation</div><div>Recent fresh</div></div>
+    ${rows||'<div class="row"><div style="color:var(--ink-3)">No pantry matches.</div></div>'}</div>`;
+}
+
+function vDrivers(){
+  const rows=DRIVERS.filter(d=>!S.q||d.name.toLowerCase().includes(S.q)).map(d=>`<div class="row driver">
+    <div><div class="nm">${esc(d.name)}</div><div class="sub">Based ${esc(d.base)}</div></div>
+    <div>${d.fridge?'<span class="tag cold">refrigerated</span>':'<span class="tag amb">ambient only</span>'}</div>
+    <div class="mono" style="font-size:13.5px">${d.win}</div>
+    <div><span class="tag auto">available</span></div></div>`).join("");
+  return `<div class="phead"><h1>Drivers</h1><p>Only refrigerated vehicles are offered chilled or frozen loads. Availability windows are checked before a dispatch is ever proposed.</p></div>
+    <div class="rows"><div class="row driver rh"><div>Driver</div><div>Vehicle</div><div>Window</div><div>State</div></div>${rows}</div>`;
+}
+
+function vAutonomy(){
+  // Hypothetical across every offer seen today, not just the ones still open — so the
+  // three levels are genuinely comparable even after some have already been placed.
+  const seen=S.offers.filter(o=>o.status!=="declined");
+  const counts={};
+  Object.keys(THRESHOLDS).forEach(l=>{
+    counts[l]=seen.filter(o=>evaluateRules(o.ctx,l).length>0).length;
+  });
+  const firing={};
+  pending().forEach(o=>hitsFor(o).forEach(h=>firing[h.rule]=(firing[h.rule]||0)+1));
+  const card=(l,label,state)=>{
+    const T=THRESHOLDS[l];
+    return `<button class="lvl ${S.level===l?"on":""}" data-level="${l}">
+      <header>${label}<span class="state">${S.level===l?"in use":state}</span></header>
+      <dl><dt>Places on its own up to</dt><dd>${T.kg} kg</dd>
+          <dt>Needs slack of at least</dt><dd>${T.margin} min</dd>
+          <dt>Minimum safety confidence</dt><dd>${T.conf.toFixed(2)}</dd>
+          <dt>Fills at most</dt><dd>${Math.round(T.cap*100)}% of a store</dd></dl>
+      <div class="out">Would hold <b>${counts[l]}</b> of today's ${seen.length} offers for a human</div></button>`;
+  };
+  return `<div class="phead"><h1>Autonomy</h1><p>You decide how much authority Gleaner has. Moving the dial shifts four thresholds at once — and the counts below are computed live against the offers actually in play right now.</p></div>
+    <div class="dial">${card("conservative","Conservative","strict")}${card("balanced","Balanced","")}${card("trusted","Trusted","loose")}</div>
+    <div class="note"><b>Two rules ignore the dial entirely.</b> Food-safety liability and dietary consent are not preferences, so they escalate at every level and cannot be loosened. A test suite asserts this, and the assertion has been proven capable of failing.</div>
+    <h2 class="sec">Every rule that can stop the agent</h2>
+    <p class="lede">Highlighted rules are firing on the offers open right now.</p>
+    <div class="rules">${Object.keys(RULE_TEXT).map(r=>{
+      const nn=NON_NEGOTIABLE.includes(r), f=firing[r]||0;
+      return `<div class="rule-i ${f?"firing":""}"><span class="lock ${nn?"hard":""}">${nn?"!":"◐"}</span>
+        <div><div class="rn">${r}</div><div class="rd">${RULE_TEXT[r]}</div></div>
+        ${f?`<span class="cnt">×${f}</span>`:""}</div>`}).join("")}</div>`;
+}
+
+function vTimeline(){
+  return `<div class="phead"><h1>Timeline</h1><p>Every decision Gleaner made and every decision you made, in order. Produced by hooks on the agent loop, so the agent never has to report on itself.</p></div>
+    ${S.timeline.length?`<div class="tl">${S.timeline.map(e=>`<div class="ev ${e.kind}">
+      <div class="t">${e.at.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>
+      <div class="m"><b>${esc(e.msg)}</b></div>${e.det?`<div class="d">${esc(e.det)}</div>`:""}</div>`).join("")}</div>`
+    :'<div class="empty"><strong>Nothing recorded yet</strong>Act on a decision and it will appear here.</div>'}`;
+}
+
+function vImpact(){
+  const p=placed(), kg=p.reduce((a,o)=>a+o.kg,0);
+  const meals=Math.floor(kg/0.544), co2=(kg*2.5).toFixed(1);
+  const declined=S.offers.filter(o=>o.status==="declined").reduce((a,o)=>a+o.kg,0);
+  return `<div class="phead"><h1>Impact</h1><p>Computed from published conversion factors, not invented — 0.544 kg per meal (Feeding America / ReFED) and 2.5 kg CO₂e avoided per kg diverted from landfill (EPA WARM).</p></div>
+    <div class="stats" style="border-radius:var(--r)">
+      <div><div class="k">Placements</div><div class="v">${p.length}</div></div>
+      <div><div class="k">Food rescued</div><div class="v">${kg} <small>kg</small></div></div>
+      <div><div class="k">Meals</div><div class="v">${meals.toLocaleString()}</div></div>
+      <div><div class="k">CO₂e avoided</div><div class="v">${co2} <small>kg</small></div></div>
+    </div>
+    <h2 class="sec">The counterfactual</h2>
+    <p class="lede">The number that matters to a funder is not what was moved — it is what would not have moved otherwise.</p>
+    <div class="cards">
+      <div class="card"><h3>What Gleaner placed unattended</h3><ul>
+        ${p.length?p.map(o=>`<li><b>${o.kg} kg</b> ${esc(o.food.toLowerCase())} → ${esc(pname(o.pantry))}</li>`).join(""):"<li>Nothing yet.</li>"}
+      </ul></div>
+      <div class="card"><h3>What a human still decided</h3><ul>
+        ${S.offers.filter(o=>o.resolution&&o.resolution.how!=="auto").map(o=>`<li><b>${o.kg} kg</b> ${esc(o.food.toLowerCase())} — ${esc(o.resolution.how)}</li>`).join("")||"<li>Nothing yet.</li>"}
+        ${declined?`<li><b>${declined} kg</b> declined rather than placed badly.</li>`:""}
+      </ul></div>
+    </div>`;
+}
+
+function vFeatures(){
+  const R=[
+    ["Read a messy offer","Turns “about 20 crates of romaine, pickup after 4” into items, weight, handling class, ready time and address.","shipped"],
+    ["Run the perishability clock","Published cold-chain budgets per handling class, reduced by time already out of refrigeration. Chilled gets 240 minutes; frozen gets 60.","shipped"],
+    ["Rank pantries honestly","Separates hard blockers — shut on arrival, no room, dietary clash, past the deadline — from preferences, so a high score can never override physics or consent.","shipped"],
+    ["Weight for equity","Boosts pantries that received less fresh food than their peers over 30 days.","shipped"],
+    ["Route a driver","Matches refrigerated vehicles to food that needs them, respects availability windows, checks arrival beats the deadline.","shipped"],
+    ["Decide what it may do alone","An executable policy — not prompt text — evaluated before every consequential action.","shipped"],
+    ["Judge the world, not itself","The policy derives its facts from the offer record and pantry register, so an agent understating a load still gets caught.","shipped"],
+    ["Stop mid-thought","Pauses on a real decision, persists its whole state, resumes hours later on another machine from your structured answer.","shipped"],
+    ["Explain itself","Every model call, tool call and node transition recorded as a replayable timeline.","shipped"],
+    ["Refuse to invent","Consequential actions validate every id, so a hallucinated pantry is rejected and never reaches the ledger.","shipped"],
+    ["Count what it saved","Meals and CO₂e from published factors, plus the counterfactual.","shipped"],
+    ["Prove it is safe","A scenario suite asserting no autonomy level can dial away safety or consent — verified capable of failing.","shipped"],
+    ["Run with no setup","A deterministic Pittsburgh so anyone reproduces every scenario without credentials or network.","shipped"],
+    ["Forecast demand","Predicts pantry demand and free storage a week out.","next"],
+    ["Ask for surplus","Spots donors whose pattern says food is going spare and drafts a specific ask.","next"],
+    ["Use real geography","Live geocoding and road routing in place of straight-line estimates.","next"],
+    ["Take offers from anywhere","Inbound email and webhooks in; Slack and SMS out.","next"]
+  ];
+  return `<div class="phead"><h1>What Gleaner does</h1><p>Seventeen capabilities. Thirteen are built and tested today; four are the next plan.</p></div>
+  <div class="scroll"><table><thead><tr><th>Capability</th><th>What it actually does</th><th>State</th></tr></thead><tbody>
+  ${R.map(r=>`<tr><td class="f">${r[0]}</td><td>${r[1]}</td><td><span class="tag ${r[2]==="shipped"?"auto":"amb"}">${r[2]}</span></td></tr>`).join("")}
+  </tbody></table></div>
+  <h2 class="sec">How it is built</h2>
+  <div class="cards">
+    <div class="card"><h3>The agent</h3><ul>
+      <li><b>Strands Agents SDK</b> orchestrating a five-node graph: intake, safety, match, route, commit.</li>
+      <li><b>Interventions</b> carry the autonomy boundary — a guarded call is confirmed, denied or allowed by code.</li>
+      <li><b>Interrupts and snapshots</b> give a run that survives being put down and picked up.</li>
+      <li><b>Hooks</b> produce the audit timeline without the agent reporting on itself.</li></ul></div>
+    <div class="card"><h3>Why it holds up</h3><ul>
+      <li><b>The maths is not the model's job.</b> Perishability, capacity, scoring and policy are pure functions.</li>
+      <li><b>Unknown is never permissive.</b> A missing field or unresolvable pantry escalates.</li>
+      <li><b>The claim is narrow and true.</b> Liability reasoning is a documented cold-chain proxy, not a legal determination.</li>
+      <li><b>217 offline tests</b> plus live-model tests covering pause, approval and rejection.</li></ul></div>
+  </div>
+  <h2 class="sec">Why this problem</h2>
+  <div class="cards">
+    <div class="card"><h3>The gap</h3><ul>
+      <li>Just <b>2.5%</b> of surplus food was donated in 2024; growers donated <b>1.6%</b> of theirs.</li>
+      <li><b>47.9 million</b> Americans were food insecure that year.</li>
+      <li>Food banks are <b>turned away from collections</b> for want of a refrigerated vehicle.</li>
+      <li>ReFED names the fix: <b>coordination and matching technology</b> on near-real-time data.</li></ul></div>
+    <div class="card"><h3>Why the existing tools don't close it</h3><ul>
+      <li>Food Rescue Hero, MEANS, Careit and Copia are <b>boards</b>: post a donation, wait for a human.</li>
+      <li>None reasons about whether the pantry has cold storage free <b>right now</b>.</li>
+      <li>None checks a driver beats the window before committing.</li>
+      <li>They are <b>another app someone has to open</b>. Gleaner is the one that doesn't need opening.</li></ul></div>
+  </div>`;
+}
+
+function match(o){
+  if(!S.q) return true;
+  return (o.food+" "+o.donor+" "+o.id+" "+pname(o.pantry)).toLowerCase().includes(S.q);
+}
+
+const VIEWS={today:vToday,decisions:vDecisions,offers:vOffers,pantries:vPantries,drivers:vDrivers,
+              autonomy:vAutonomy,timeline:vTimeline,impact:vImpact,features:vFeatures};
+function render(){
+  renderNav();
+  $("#view").innerHTML=(VIEWS[S.route]||vToday)();
+  $("#view").querySelectorAll("[data-dl]").forEach(tick);
+  window.scrollTo({top:0,behavior:"instant"});
+}
+function tick(el){
+  const L=fmtLeft(+el.dataset.dl-Date.now());
+  el.textContent=L.t; el.className="clock "+L.c;
+}
+setInterval(()=>document.querySelectorAll("[data-dl]").forEach(tick),1000);
+
+/* ---------- actions ---------- */
+document.addEventListener("click",e=>{
+  const go=e.target.closest("[data-go]");
+  if(go){S.route=go.dataset.go; render(); return}
+
+  const lv=e.target.closest("[data-level]");
+  if(lv){
+    const old=S.level; S.level=lv.dataset.level;
+    if(old!==S.level){
+      const freed=autoNow();
+      freed.forEach(o=>{o.status="placed";o.resolution={by:"Gleaner",how:"auto"};
+        log("act",`Placed ${o.kg} kg — ${o.food.toLowerCase()}`,`Cleared automatically when you moved to ${S.level}.`)});
+      log("human",`Autonomy set to ${S.level}`,
+        freed.length?`${freed.length} offer${freed.length>1?"s":""} cleared immediately.`:"No offer changed hands.");
+      toast(freed.length?`${S.level} — ${freed.length} offer${freed.length>1?"s":""} placed automatically`:`Autonomy set to ${S.level}`);
+    }
+    render(); return;
+  }
+
+  const a=e.target.closest("[data-act]");
+  if(!a) return;
+  const o=S.offers.find(x=>x.id===a.dataset.id);
+  if(!o) return;
+  const act=a.dataset.act;
+
+  if(act==="why"){
+    const hits=hitsFor(o);
+    log("act",`Reasoning shown — ${o.id}`,hits.map(h=>`${h.rule}: ${h.detail}`).join("  ·  "));
+    S.route="timeline"; toast("Reasoning added to the timeline"); render(); return;
+  }
+  if(act==="approve"){
+    o.status="placed"; o.resolution={by:"Roger K",how:"approved",
+      note:`Approved by Roger K — placed at ${pname(o.pantry)}.`};
+    log("human",`You approved ${o.kg} kg — ${o.food.toLowerCase()}`,`Overrode ${hitsFor(o).length||"the"} held rule(s). Recorded against your name.`);
+    toast("Placement approved");
+  }
+  if(act==="reroute"){
+    const to=a.dataset.to; const from=pname(o.pantry);
+    o.pantry=to; o.ctx.dietary_ok=true; o.status="placed";
+    o.resolution={by:"Roger K",how:"rerouted",note:`Rerouted from ${from} to ${pname(to)} by Roger K.`};
+    log("human",`You rerouted ${o.kg} kg to ${pname(to)}`,`${from} could not accept it. Consent rule respected rather than overridden.`);
+    toast(`Rerouted to ${pname(to)}`);
+  }
+  if(act==="decline"){
+    o.status="declined"; o.resolution={by:"Roger K",how:"declined",
+      note:`Declined by Roger K — donor told we cannot take it.`};
+    log("human",`You declined ${o.kg} kg — ${o.food.toLowerCase()}`,"No placement made. The donor is told rather than left waiting.");
+    toast("Offer declined");
+  }
+  render();
+});
+
+$("#q").addEventListener("input",e=>{
+  S.q=e.target.value.trim().toLowerCase();
+  if(!["offers","pantries","drivers"].includes(S.route)) S.route="offers";
+  render();
+});
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==="k"){e.preventDefault();$("#q").focus()}
+});
+$("#reset").addEventListener("click",()=>{boot();S.route="today";$("#q").value="";toast("Demo reset");render()});
+$("#newOffer").addEventListener("click",()=>{
+  const pool=[
+    {food:"Rotisserie chickens, hot-held",kg:28,temp:"chilled",pantry:"pan-7",mins:150,
+     ctx:{weight_kg:28,margin_minutes:34,safety_confidence:.62,capacity_fraction:.44,liability_ok:true,dietary_ok:true,donor_is_novel:true,has_viable_match:true}},
+    {food:"Frozen fish fillets",kg:65,temp:"frozen",pantry:"pan-3",mins:12,
+     ctx:{weight_kg:65,margin_minutes:88,safety_confidence:.94,capacity_fraction:.55,liability_ok:true,dietary_ok:true,donor_is_novel:false,has_viable_match:true}},
+    {food:"Bagged apples & pears",kg:19,temp:"ambient",pantry:"pan-6",mins:0,
+     ctx:{weight_kg:19,margin_minutes:300,safety_confidence:.98,capacity_fraction:.31,liability_ok:true,dietary_ok:true,donor_is_novel:false,has_viable_match:true}}
+  ];
+  const t=pool[S.offers.length%pool.length];
+  const o={...t,id:"off-"+(7000+S.offers.length*37),donor:"Walk-in donor",status:"open",resolution:null,
+           ctx:{...t.ctx},deadline:Date.now()+Math.max(4,BUDGET[t.temp]-t.mins)*60000};
+  S.offers.push(o);
+  const hits=evaluateRules(o.ctx,S.level);
+  if(hits.length===0){o.status="placed";o.resolution={by:"Gleaner",how:"auto"};
+    log("act",`Placed ${o.kg} kg — ${o.food.toLowerCase()}`,`Arrived and cleared every ${S.level} limit. You were not interrupted.`);
+    toast("Offer arrived and placed itself");}
+  else{log("act",`Held ${o.kg} kg — ${o.food.toLowerCase()}`,hits.map(h=>h.rule).join(", "));
+    toast(`Offer arrived — held for you (${hits.length} rule${hits.length>1?"s":""})`); S.route="decisions";}
+  render();
+});
+
+boot(); render();
+})();
+</script>

@@ -33,7 +33,10 @@ def _setup(**ctx_overrides):
     ctx = PlacementContext(**{**base, **ctx_overrides})
     world = SimulatedCity(seed=412, now=NOW)
     ledger: list[dict] = []
-    policy = EscalationPolicy(AutonomyLevel.BALANCED, lambda _inp: ctx)
+    # The provider is tool-aware: it is called with (tool_name, tool_input). These tests
+    # pin the pause/resume mechanics rather than the derivation, so they return one fixed
+    # context whatever tool is being guarded.
+    policy = EscalationPolicy(AutonomyLevel.BALANCED, lambda _tool, _inp: ctx)
     trail = AuditTrail()
     return build_place_agent(world, ledger, policy, trail), ledger, policy, trail
 
