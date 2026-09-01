@@ -235,3 +235,143 @@ def test_build_default_policy_pairs_the_level_with_a_world_derived_provider():
     assert policy.level is AutonomyLevel.TRUSTED
     ctx = policy.context_provider(_input(world, pantry_id="pan-does-not-exist"))
     assert ctx.has_viable_match is False
+
+
+# --- the headline claim, end to end -----------------------------------------------
+#
+# "The agent cannot autonomously commit food that is unsafe, out of window, over
+# capacity, or in dietary conflict." These drive the real EscalationPolicy, built the
+# real way, with the real tool input shape, at the MOST permissive autonomy level -
+# so passing here means passing at every level.
+
+
+def _guard(world, level=AutonomyLevel.TRUSTED):
+    from gleaner.loops.place.runner import build_default_policy
+
+    return build_default_policy(world, level)
+
+
+def _commit_event(tool_input: dict):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(tool_use={"name": "commit_placement", "input": tool_input})
+
+
+def _stopped(world, level=AutonomyLevel.TRUSTED, **overrides) -> bool:
+    from strands.interventions import Confirm
+
+    action = _guard(world, level).before_tool_call(_commit_event(_input(world, **overrides)))
+    return isinstance(action, Confirm)
+
+
+def test_unsafe_food_cannot_be_committed_alone_at_any_level():
+    world = _world()
+    assert _stopped(world, minutes_out_of_refrigeration=400.0)          # budget is 240
+
+
+def test_out_of_window_food_cannot_be_committed_alone_at_any_level():
+    world = _world()
+    assert _stopped(
+        world,
+        minutes_out_of_refrigeration=180.0,
+        eta=(NOW + timedelta(minutes=90)).isoformat(),                  # arrives 30 min late
+    )
+
+
+def test_over_capacity_placement_cannot_be_committed_alone_at_any_level():
+    world = _world()
+    no_freezer = next(p for p in world.pantries() if p.frozen_capacity_kg == 0.0)
+    assert _stopped(world, pantry_id=no_freezer.pantry_id, temp_class="frozen")
+
+
+def test_dietary_conflict_cannot_be_committed_alone_at_any_level():
+    world = _world()
+    assert _stopped(
+        world,
+        pantry_id=_pantry_with_restriction(world, "pork"),
+        dietary_flags=["pork"],
+    )
+
+
+def _clean_offer(world):
+    """A seeded offer with no dietary flags, a fresh cold chain and a known donor.
+
+    Found by search rather than asserted blind - the seed decides, and the search
+    fails loudly if the default city stops producing one.
+    """
+    donations = {d.donor_id: d.donation_count for d in world.donors()}
+    for seed in range(1, 200):
+        offer = world.generate_offer(rng_seed=seed)
+        flagged = any(flag for lot in offer.lots for flag in lot.dietary_flags)
+        if not flagged and offer.minutes_out_of_refrigeration == 0 and donations[offer.donor_id]:
+            return offer
+    raise AssertionError("the default city produced no clean offer in 200 seeds")
+
+
+def test_a_clean_placement_is_still_allowed_through():
+    """The guard has to be capable of saying yes, or the tests above prove nothing."""
+    from strands.interventions import Proceed
+
+    world = _world()
+    offer = _clean_offer(world)
+    pantry = next(p for p in world.pantries() if not p.dietary_restrictions)
+    action = _guard(world).before_tool_call(
+        _commit_event(
+            _input(
+                world,
+                pantry_id=pantry.pantry_id,
+                offer_id=offer.offer_id,
+                weight_kg=5.0,
+                temp_class="chilled",
+                minutes_out_of_refrigeration=0.0,
+                eta=(offer.ready_at + timedelta(minutes=20)).isoformat(),
+            )
+        )
+    )
+    assert isinstance(action, Proceed)
+
+
+def test_understating_the_cold_chain_does_not_buy_permission():
+    """The agent says the food is fresh; the offer record says 200 minutes out."""
+    world = _world()
+    stale = world.generate_offer()                     # the default seed's offer
+    assert stale.minutes_out_of_refrigeration > 0, "this seed no longer proves the point"
+    ctx = build_context_provider(world)(
+        _input(world, offer_id=stale.offer_id, minutes_out_of_refrigeration=0.0)
+    )
+    assert ctx.safety_confidence < 0.99
+    assert _escalates(ctx)
+
+
+def test_omitting_a_dietary_flag_does_not_buy_permission():
+    """Consent is non-negotiable, so the offer's flags are used even if unmentioned."""
+    world = _world()
+    porky = next(
+        world.generate_offer(rng_seed=seed)
+        for seed in range(1, 200)
+        if any("pork" in lot.dietary_flags for lot in world.generate_offer(rng_seed=seed).lots)
+    )
+    ctx = build_context_provider(world)(
+        _input(
+            world,
+            offer_id=porky.offer_id,
+            pantry_id=_pantry_with_restriction(world, "pork"),
+            dietary_flags=[],                          # the agent simply does not say
+        )
+    )
+    assert ctx.dietary_ok is False
+    assert "dietary_conflict" in {h.rule for h in evaluate_rules(ctx, AutonomyLevel.TRUSTED)}
+
+
+def test_every_one_of_the_four_is_stopped_at_the_strictest_level_too():
+    world = _world()
+    no_freezer = next(p for p in world.pantries() if p.frozen_capacity_kg == 0.0)
+    cases = [
+        dict(minutes_out_of_refrigeration=400.0),
+        dict(minutes_out_of_refrigeration=180.0, eta=(NOW + timedelta(minutes=90)).isoformat()),
+        dict(pantry_id=no_freezer.pantry_id, temp_class="frozen"),
+        dict(pantry_id=_pantry_with_restriction(world, "pork"), dietary_flags=["pork"]),
+    ]
+    for level in AutonomyLevel.order():
+        for case in cases:
+            assert _stopped(world, level, **case), f"{level} let {case} through"

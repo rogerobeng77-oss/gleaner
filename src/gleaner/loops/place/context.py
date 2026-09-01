@@ -112,15 +112,20 @@ def build_context_provider(
 
     Notes on each field:
 
-    * ``weight_kg`` is the model's assertion. It has to be: the tool would move that
-      mass whatever we believe. It is checked for being a positive number and
-      nothing else.
+    * ``weight_kg`` and ``temp_class`` are the model's assertions, and irreducibly so:
+      a placement may legitimately be part of an offer, of one handling class, so
+      neither can be read off the offer record. They are validated for shape and then
+      used to *tighten* the capacity and cold-chain arithmetic, never to relax it.
     * ``margin_minutes`` recomputes the real deadline with ``perishability.safe_until``
-      and compares it against the ETA the model promised.
+      - from the offer's ready time and the longer of the two cold-chain figures - and
+      compares it against the ETA the model promised.
     * ``capacity_fraction`` is ``capacity.utilisation_after`` against the pantry's
       real current usage, not against anything the model said about capacity.
     * ``dietary_ok`` intersects the food's flags with the looked-up pantry's real
-      restrictions.
+      restrictions. The flags are the union of what the agent declared and what the
+      offer record says, so omitting a flag cannot buy permission. On an offer of
+      several lots this can escalate a placement of the unflagged lot - deliberately:
+      over-escalating a consent question is the right way to be wrong.
     * ``liability_ok`` is ``not perishability.is_already_unsafe(...)``. This is a
       **conservative proxy** for Bill Emerson Good Samaritan Act eligibility and
       **not a legal determination**: it says only that the food has not visibly blown
@@ -135,17 +140,20 @@ def build_context_provider(
     """
     offer_lookup = getattr(world, "offer", None)
 
+    def _offer(tool_input: dict[str, Any]) -> Any | None:
+        """The donation offer behind this call, if the world can resolve it."""
+        if not callable(offer_lookup):
+            return None
+        return offer_lookup(tool_input.get("offer_id"))
+
     def _pantry(pantry_id: Any) -> Pantry | None:
         if not isinstance(pantry_id, str):
             return None
         return next((p for p in world.pantries() if p.pantry_id == pantry_id), None)
 
-    def _donor_is_novel(tool_input: dict[str, Any]) -> bool:
+    def _donor_is_novel(tool_input: dict[str, Any], offer: Any | None) -> bool:
         """Novel unless the world can positively say otherwise."""
-        donor_id = tool_input.get("donor_id")
-        if donor_id is None and callable(offer_lookup):
-            offer = offer_lookup(tool_input.get("offer_id"))
-            donor_id = getattr(offer, "donor_id", None)
+        donor_id = tool_input.get("donor_id") or getattr(offer, "donor_id", None)
         if not isinstance(donor_id, str):
             return True
         donor = next((d for d in world.donors() if d.donor_id == donor_id), None)
@@ -185,6 +193,17 @@ def build_context_provider(
         raw_flags = tool_input.get("dietary_flags") or []
         flags = [f for f in raw_flags if isinstance(f, str)] if isinstance(raw_flags, list) else []
 
+        # Where the world knows the offer, its record beats the agent's description of
+        # it. Both are combined in the direction that escalates: the union of dietary
+        # flags, the longer time out of refrigeration, the offer's own ready time. An
+        # agent that forgets to mention the pork therefore does not get waved through.
+        offer = _offer(tool_input)
+        if offer is not None:
+            for offer_lot in getattr(offer, "lots", []):
+                flags.extend(f for f in offer_lot.dietary_flags if f not in flags)
+            minutes_out = max(minutes_out, float(offer.minutes_out_of_refrigeration))
+            ready_at = offer.ready_at
+
         lot = FoodLot(
             description="proposed placement",
             weight_kg=weight_kg,
@@ -200,7 +219,7 @@ def build_context_provider(
             capacity_fraction=utilisation_after(pantry, lot),
             liability_ok=not perishability.is_already_unsafe(temp_class, minutes_out),
             dietary_ok=not (set(flags) & set(pantry.dietary_restrictions)),
-            donor_is_novel=_donor_is_novel(tool_input),
+            donor_is_novel=_donor_is_novel(tool_input, offer),
             has_viable_match=can_accept(pantry, lot),
         )
 
