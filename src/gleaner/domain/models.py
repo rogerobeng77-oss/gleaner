@@ -88,7 +88,21 @@ class Pantry(BaseModel):
         return max(0.0, capacity - used)
 
     def is_open_at(self, moment: datetime) -> bool:
-        return self.opens_at_hour <= moment.hour < self.closes_at_hour
+        """Whether the pantry is open at ``moment``, by hour of day.
+
+        The window may span midnight (e.g. ``opens_at_hour=22,
+        closes_at_hour=6``): in that case the pantry is open from
+        ``opens_at_hour`` through 23:00 and from 00:00 up to
+        ``closes_at_hour``. When ``opens_at_hour == closes_at_hour`` the
+        pantry is treated as open 24 hours a day, since a zero-length
+        window is not a meaningful "closed" state and would otherwise
+        cause a legitimately always-open pantry to be dropped from ranking.
+        """
+        if self.opens_at_hour == self.closes_at_hour:
+            return True
+        if self.opens_at_hour < self.closes_at_hour:
+            return self.opens_at_hour <= moment.hour < self.closes_at_hour
+        return moment.hour >= self.opens_at_hour or moment.hour < self.closes_at_hour
 
 
 class Driver(BaseModel):

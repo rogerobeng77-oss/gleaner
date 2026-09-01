@@ -75,6 +75,44 @@ def test_pantry_open_at_respects_hours():
     assert not pantry.is_open_at(NOW.replace(hour=20))
 
 
+def test_pantry_open_at_handles_overnight_window_late_evening():
+    pantry = Pantry(
+        pantry_id="pan-2", name="Overnight", lat=40.46, lon=-79.92,
+        cold_capacity_kg=500, frozen_capacity_kg=0, dry_capacity_kg=0,
+        opens_at_hour=22, closes_at_hour=6,
+    )
+    assert pantry.is_open_at(NOW.replace(hour=23))
+
+
+def test_pantry_open_at_handles_overnight_window_early_hours():
+    pantry = Pantry(
+        pantry_id="pan-2", name="Overnight", lat=40.46, lon=-79.92,
+        cold_capacity_kg=500, frozen_capacity_kg=0, dry_capacity_kg=0,
+        opens_at_hour=22, closes_at_hour=6,
+    )
+    assert pantry.is_open_at(NOW.replace(hour=3))
+
+
+def test_pantry_open_at_overnight_window_closed_in_afternoon():
+    pantry = Pantry(
+        pantry_id="pan-2", name="Overnight", lat=40.46, lon=-79.92,
+        cold_capacity_kg=500, frozen_capacity_kg=0, dry_capacity_kg=0,
+        opens_at_hour=22, closes_at_hour=6,
+    )
+    assert not pantry.is_open_at(NOW.replace(hour=14))
+
+
+def test_pantry_open_at_equal_open_and_close_hour_means_always_open():
+    pantry = Pantry(
+        pantry_id="pan-3", name="AlwaysOpen", lat=40.46, lon=-79.92,
+        cold_capacity_kg=500, frozen_capacity_kg=0, dry_capacity_kg=0,
+        opens_at_hour=9, closes_at_hour=9,
+    )
+    assert pantry.is_open_at(NOW.replace(hour=3))
+    assert pantry.is_open_at(NOW.replace(hour=9))
+    assert pantry.is_open_at(NOW.replace(hour=23))
+
+
 def test_driver_window_containment():
     driver = Driver(
         driver_id="drv-1", name="Ama", lat=40.44, lon=-79.99, refrigerated=True,
